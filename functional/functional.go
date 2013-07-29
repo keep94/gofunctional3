@@ -13,10 +13,15 @@ import (
   "reflect"
 )
 
-// Done indicates that the end of a Stream has been reached
 var (
+  // Done indicates that the end of a Stream has been reached
   Done = errors.New("functional: End of Stream reached.")
+  // Filters return Skipped to indicate that the current value should be
+  // skipped.
   Skipped = errors.New("functional: Value skipped.")
+)
+
+var (
   nilM = nilMapper{}
   nilPieceL = []compositeMapperPiece{{mapper: nilM}}
   nilS = nilStream{}
@@ -31,18 +36,11 @@ type Stream interface {
   // Next emits the next value in this Stream of T.
   // If Next returns nil, the next value is stored at ptr.
   // If Next returns Done, then the end of the Stream has been reached,
-  // and the value ptr points to is unspecified.
-  // If Next returns some other error, then the caller should close the
-  // Stream with Close.  ptr must be a *T.
-  // Once Next returns Done, it should continue to return Done, and
-  // Close should return nil.
+  // and the value ptr points to is unspecified. ptr must be a *T.
+  // Once Next returns Done, it should continue to return Done.
   Next(ptr interface{}) error
-  // Close indicates that the caller is finished with this Stream. If Caller
-  // consumes all the values in this Stream, then it need not call Close. But
-  // if Caller chooses not to consume the Stream entirely, it should call
-  // Close. Caller should also call Close if Next returns an error other
-  // than Done. Once Close returns nil, it should continue to return nil.
-  // The result of calling Next after Close is undefined.
+  // Caller calls Close when it is finished with this Stream. 
+  // The result of calling Next after Close is unspecified.
   io.Closer
 }
 
@@ -55,8 +53,7 @@ type Tuple interface {
 // Filterer of T filters values in a Stream of T.
 type Filterer interface {
   // Filter returns nil if value ptr points to should be included or Skipped
-  // if value should be skipped. Filter may return other errors. ptr must be
-  // a *T.
+  // if value should be skipped. ptr must be a *T.
   Filter(ptr interface{}) error
 }
 
@@ -118,7 +115,8 @@ type Rows interface {
   Scan(args ...interface{}) error
 }
 
-// NilStream returns a Stream that emits no values.
+// NilStream returns a Stream that emits no values. Calling Close on
+// returned Stream is a no-op.
 func NilStream() Stream {
   return nilS
 }
@@ -126,10 +124,11 @@ func NilStream() Stream {
 // Map applies f, which maps a type T value to a type U value, to a Stream
 // of T producing a new Stream of U. If s is
 // (x1, x2, x3, ...), Map returns the Stream (f(x1), f(x2), f(x3), ...).
-// If f returns false for a T value, then the corresponding U value is left
-// out of the returned stream. ptr is a *T providing storage for emitted values
-// from s. Calling Close on returned Stream closes s. If f is a
-// CompositeMapper, Fast() is called on it automatically.
+// If f returns Skipped for a T value, then the corresponding U value is
+// left out of the returned stream. ptr is a *T providing storage for
+// emitted values from s. If f is a CompositeMapper, Fast() is called on
+// it automatically.
+// Calling Close on returned Stream closes s.
 func Map(f Mapper, s Stream, ptr interface{}) Stream {
   ms, ok := s.(*mapStream)
   if ok {
@@ -144,8 +143,9 @@ func Map(f Mapper, s Stream, ptr interface{}) Stream {
 
 // Filter filters values from s, returning a new Stream of T. The returned
 // Stream's Next method reports any errors besides Skipped that the Filter
-// method of f returns. Calling Close on returned Stream closes s.
+// method of f returns. 
 // f is a Filterer of T; s is a Stream of T.
+// Calling Close on returned Stream closes s.
 func Filter(f Filterer, s Stream) Stream {
   fs, ok := s.(*filterStream)
   if ok {
@@ -156,29 +156,29 @@ func Filter(f Filterer, s Stream) Stream {
 
 // Count returns an infinite Stream of int which emits all values beginning
 // at 0.
+// Calling Close on returned Stream is a no-op.
 func Count() Stream {
   return &count{0, 1}
 }
 
 // CountFrom returns an infinite Stream of int emitting values beginning at
 // start and increasing by step.
+// Calling Close on returned Stream is a no-op.
 func CountFrom(start, step int) Stream {
   return &count{start, step}
 }
 
 // Slice returns a Stream that will emit elements in s starting at index start
 // and continuing to but not including index end. Indexes are 0 based. If end
-// is negative, it means go to the end of s. Calling Close on returned Stream
-// closes s. When end of returned Stream is reached, it closes s if it has not
-// consumed s returning any Close error through Next.
+// is negative, it means go to the end of s.
+// Calling Close on returned Stream
+// closes s.
 func Slice(s Stream, start int, end int) Stream {
   return &sliceStream{Stream: s, start: start, end: end}
 }
 
-// ReadRows returns the rows in a database table as a Stream of Tuple. When
-// end of returned Stream is reached, it closes r if r implements io.Closer
-// propagating any Close error through Next. Calling Close on returned
-// stream closes r if r implements io.Closer.
+// ReadRows returns the rows in a database table as a Stream of Tuple.
+// Calling Close on returned stream closes r if r implements io.Closer.
 func ReadRows(r Rows) Stream {
   c, _ := r.(io.Closer)
   return &rowStream{rows: r, maybeCloser: maybeCloser{c: c}}
@@ -186,29 +186,25 @@ func ReadRows(r Rows) Stream {
 
 // ReadLines returns the lines of text in r separated by either "\n" or "\r\n"
 // as a Stream of string. The emitted string types do not contain the
-// end of line characters. When end of returned Stream is reached, it closes
-// r if r implements io.Closer propagating any Close error through Next.
+// end of line characters.
 // Calling Close on returned Stream closes r if r implements io.Closer.
 func ReadLines(r io.Reader) Stream {
   c, _ := r.(io.Closer)
   return &lineStream{bufio: bufio.NewReader(r), maybeCloser: maybeCloser{c: c}}
 }
 
-// Deferred returns a Stream that emits the values from the Stream f returns.
-// f is not called until the first time Next is called on the returned stream.
-// Calling Close on returned Stream closes the Stream f creates or does nothing
-// if f not called.
-func Deferred(f func() Stream) Stream {
-  return &deferredStream{f: f}
+func NewStreamFromStreamFunc(f func() Stream) Stream {
+  return streamFromStreamFunc{f: f}
 }
 
-// Cycle returns a Stream that repeatedly calls f and emits the resulting
-// values. Note that if f repeatedly returns the NilStream, calling Next() on
-// returned Stream will create an infinite loop. Calling Close on returned
-// Stream closes the last Stream f created or does nothing if f not called. 
-// If f returns a Stream of T then Cycle also returns a Stream of T.
+// Deferred(f) is equivalent to Flatten(Slice(NewStreamFromStreamFunc(f), 0, 1))
+func Deferred(f func() Stream) Stream {
+  return Flatten(Slice(NewStreamFromStreamFunc(f), 0, 1))
+}
+
+// Cycle(f) is equivalent to Flatten(NewStreamFromStreamFunc(f))
 func Cycle(f func() Stream) Stream {
-  return &cycleStream{Stream: nilS, f: f}
+  return Flatten(NewStreamFromStreamFunc(f))
 }
 
 // Concat concatenates multiple Streams into one.
@@ -228,7 +224,7 @@ func Concat(s ...Stream) Stream {
 
 // NewStreamFromValues converts a []T into a Stream of T. aSlice is a []T.
 // c is a Copier of T. If c is nil, regular assignment is used.
-// Calling Close on returned Stream does nothing.
+// Calling Close on returned Stream is a no-op.
 func NewStreamFromValues(aSlice interface{}, c Copier) Stream {
   sliceValue := getSliceValue(aSlice)
   if sliceValue.Len() == 0 {
@@ -239,7 +235,7 @@ func NewStreamFromValues(aSlice interface{}, c Copier) Stream {
 
 // NewStreamFromPtrs converts a []*T into a Stream of T. aSlice is a []*T.
 // c is a Copier of T. If c is nil, regular assignment is used.
-// Calling Close on returned Stream does nothing.
+// Calling Close on returned Stream is a no-op.
 func NewStreamFromPtrs(aSlice interface{}, c Copier) Stream {
   sliceValue := getSliceValue(aSlice)
   if sliceValue.Len() == 0 {
@@ -253,17 +249,18 @@ func NewStreamFromPtrs(aSlice interface{}, c Copier) Stream {
 }
 
 // Flatten converts a Stream of Stream of T into a Stream of T.
+// The returned Stream automatically closes each emitted Stream from s
+// propagating any error from closing through Next.
 // Calling Close on returned Stream closes s and the last emitted Stream
-// from s.
+// from s currently being read.
 func Flatten(s Stream) Stream {
   return &flattenStream{stream: s, current: nilS}
 }
 
 // TakeWhile returns a Stream that emits the values in s until the Filter
 // method of f returns Skipped. The returned Stream's Next method reports
-// any errors besides Skipped that the Filter method of f returns. When
-// end of returned Stream is reached, it automatically closes s if s is
-// not exhausted. Calling Close on returned Stream closes s.
+// any errors besides Skipped that the Filter method of f returns. 
+// Calling Close on returned Stream closes s.
 // f is a Filterer of T; s is a Stream of T.
 func TakeWhile(f Filterer, s Stream) Stream {
   return &takeStream{Stream: s, f: f}
@@ -272,8 +269,9 @@ func TakeWhile(f Filterer, s Stream) Stream {
 // DropWhile returns a Stream that emits the values in s starting at the
 // first value where the Filter method of f returns Skipped. The returned
 // Stream's Next method reports any errors that the Filter method of f
-// returns until it returns Skipped. Calling Close on returned Stream
-// closes s. f is a Filterer of T; s is a Stream of T.
+// returns until it returns Skipped. 
+// f is a Filterer of T; s is a Stream of T.
+// Calling Close on returned Stream closes s.
 func DropWhile(f Filterer, s Stream) Stream {
   return &dropStream{Stream: s, f: f}
 }
@@ -344,25 +342,6 @@ func FastCompose(f Mapper, g Mapper, ptr interface{}) Mapper {
 // automatically closing its underlying stream.
 func NoCloseStream(s Stream) Stream {
   return noCloseStream{s}
-}
-
-// NoCloseRows returns a Rows just like r that does not implement io.Closer.
-func NoCloseRows(r Rows) Rows {
-  _, ok := r.(io.Closer)
-  if ok {
-    return rowsWrapper{r}
-  }
-  return r
-}
-
-// NoCloseReader returns an io.Reader just like r that does not implement
-// io.Closer.
-func NoCloseReader(r io.Reader) io.Reader {
-  _, ok := r.(io.Closer)
-  if ok {
-    return readerWrapper{r}
-  }
-  return r
 }
 
 // NewFilterer returns a new Filterer of T. f takes a *T returning nil
@@ -486,7 +465,7 @@ func (s *sliceStream) Next(ptr interface{}) error {
     }
   }
   s.done = true
-  return finish(s.Close())
+  return Done
 }
 
 type rowStream struct {
@@ -501,7 +480,7 @@ func (s *rowStream) Next(ptr interface{}) error {
   }
   if !s.rows.Next() {
     s.done = true
-    return finish(s.Close())
+    return Done
   }
   ptrs := ptr.(Tuple).Ptrs()
   return s.rows.Scan(ptrs...)
@@ -521,7 +500,7 @@ func (s *lineStream) Next(ptr interface{}) error {
   line, isPrefix, err := s.bufio.ReadLine()
   if err == io.EOF {
     s.done = true
-    return finish(s.Close())
+    return Done
   }
   if err != nil {
     return err
@@ -639,6 +618,17 @@ func (s *plainStream) Close() error {
   return nil
 }
 
+type streamFromStreamFunc struct {
+  f func() Stream
+  closeDoesNothing
+}
+
+func (s streamFromStreamFunc) Next(ptr interface{}) error {
+  p := ptr.(*Stream)
+  *p = s.f()
+  return nil
+}
+
 type flattenStream struct {
   stream Stream
   current Stream
@@ -648,11 +638,14 @@ func (s *flattenStream) Next(ptr interface{}) error {
   err := s.current.Next(ptr)
   for ; err == Done; err = s.current.Next(ptr) {
     var temp Stream
-    serr := s.stream.Next(&temp)
-    if serr != nil {
+    if serr := s.stream.Next(&temp); serr != nil {
       return serr
     }
+    oldCurrent := s.current
     s.current = temp
+    if serr := oldCurrent.Close(); serr != nil {
+      return serr
+    }
   }
   return err
 }
@@ -687,7 +680,7 @@ func (s *takeStream) Next(ptr interface{}) error {
     return ferr
   }
   s.f = nil
-  return finish(s.Close())
+  return Done
 }
 
 type dropStream struct {
@@ -711,6 +704,13 @@ func (s *dropStream) Next(ptr interface{}) error {
     }
   }
   return err
+}
+
+type closeDoesNothing struct {
+}
+
+func (c closeDoesNothing) Close() error {
+  return nil
 }
   
 type funcFilterer func(ptr interface{}) error
@@ -816,15 +816,13 @@ func (s noCloseStream) Close() error {
 
 type maybeCloser struct {
   c io.Closer
-  e error
 }
 
 func (mc *maybeCloser) Close() error {
   if mc.c != nil {
-    mc.e = mc.c.Close()
-    mc.c = nil
+    return mc.c.Close()
   }
-  return mc.e
+  return nil
 }
 
 func orList(f Filterer) []Filterer {
@@ -905,13 +903,6 @@ func newCreater(ptr interface{}) Creater {
   return func() interface{} {
     return ptr
   }
-}
-
-func finish(e error) error {
-  if e == nil {
-    return Done
-  }
-  return e
 }
 
 func copyBytes(b []byte) []byte {
