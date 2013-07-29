@@ -512,30 +512,16 @@ func TestFlattenPropagateCloseError(t *testing.T) {
   if err != closeError {
     t.Errorf("Expected closeError, got %v", err)
   }
-  verifyCloseCalled(t, first)
   closeVerifyResult(t, stream, nil)
+  verifyCloseCalled(t, first)
   verifyCloseCalled(t, second)
+  verifyCloseCalled(t, s)
 }
 
 func TestFlattenCloseNormal(t *testing.T) {
-  first := NewStreamFromValues([]int{1, 2}, nil)
-  second := &streamCloseChecker{
-      NewStreamFromValues([]int{3, 4}, nil), &simpleCloseChecker{}}
-  s := &streamCloseChecker{
-      NewStreamFromValues([]Stream{first, second}, nil),
+  first := &streamCloseChecker{
+      NewStreamFromValues([]int{1, 2}, nil),
       &simpleCloseChecker{}}
-  stream := Flatten(s)
-
-  // close stream after reading 3rd element
-  slice := Slice(stream, 0, 3)
-  toIntArray(slice)
-  closeVerifyResult(t, slice, nil)
-  verifyCloseCalled(t, s)
-  verifyCloseCalled(t, second)
-}
-
-func TestFlattenCloseError1(t *testing.T) {
-  first := NewStreamFromValues([]int{1, 2}, nil)
   second := &streamCloseChecker{
       NewStreamFromValues([]int{3, 4}, nil),
       &simpleCloseChecker{closeError: closeError}}
@@ -544,16 +530,39 @@ func TestFlattenCloseError1(t *testing.T) {
       &simpleCloseChecker{}}
   stream := Flatten(s)
 
-  // close stream after reading 3rd element
+  // close stream early before reaching error
+  slice := Slice(stream, 0, 2)
+  toIntArray(slice)
+  closeVerifyResult(t, slice, nil)
+  verifyCloseCalled(t, s)
+  verifyCloseCalled(t, first)
+  // second stream not closed because it was never yielded
+}
+
+func TestFlattenCloseError1(t *testing.T) {
+  first := &streamCloseChecker{
+      NewStreamFromValues([]int{1, 2}, nil),
+      &simpleCloseChecker{}}
+  second := &streamCloseChecker{
+      NewStreamFromValues([]int{3, 4}, nil),
+      &simpleCloseChecker{closeError: closeError}}
+  s := &streamCloseChecker{
+      NewStreamFromValues([]Stream{first, second}, nil),
+      &simpleCloseChecker{}}
+  stream := Flatten(s)
+
   slice := Slice(stream, 0, 3)
   toIntArray(slice)
   closeVerifyResult(t, slice, closeError)
   verifyCloseCalled(t, s)
+  verifyCloseCalled(t, first)
   verifyCloseCalled(t, second)
 }
 
 func TestFlattenCloseError2(t *testing.T) {
-  first := NewStreamFromValues([]int{1, 2}, nil)
+  first := &streamCloseChecker{
+      NewStreamFromValues([]int{1, 2}, nil),
+      &simpleCloseChecker{}}
   second := &streamCloseChecker{
       NewStreamFromValues([]int{3, 4}, nil),
       &simpleCloseChecker{}}
@@ -562,12 +571,11 @@ func TestFlattenCloseError2(t *testing.T) {
       &simpleCloseChecker{closeError: closeError}}
   stream := Flatten(s)
 
-  // close stream after reading 3rd element
-  slice := Slice(stream, 0, 3)
+  slice := Slice(stream, 0, 0)
   toIntArray(slice)
   closeVerifyResult(t, slice, closeError)
   verifyCloseCalled(t, s)
-  verifyCloseCalled(t, second)
+  // first and second stream not closed because they were never yielded
 }
 
 func TestTakeWhileNone(t *testing.T) {
