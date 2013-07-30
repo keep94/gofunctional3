@@ -391,8 +391,8 @@ func TestConcatCloseNormal(t *testing.T) {
   y := &streamCloseChecker{NilStream(), &simpleCloseChecker{}}
   stream := Concat(x, y)
   closeVerifyResult(t, stream, nil)
-  verifyCloseCalled(t, x)
-  verifyCloseCalled(t, y)
+  verifyCloseCalled(t, x, true)
+  verifyCloseCalled(t, y, true)
 }
 
 func TestConcatCloseError1(t *testing.T) {
@@ -400,8 +400,8 @@ func TestConcatCloseError1(t *testing.T) {
   y := &streamCloseChecker{NilStream(), &simpleCloseChecker{}}
   stream := Concat(x, y)
   closeVerifyResult(t, stream, closeError)
-  verifyCloseCalled(t, x)
-  verifyCloseCalled(t, y)
+  verifyCloseCalled(t, x, true)
+  verifyCloseCalled(t, y, true)
 }
 
 func TestConcatCloseError2(t *testing.T) {
@@ -409,8 +409,8 @@ func TestConcatCloseError2(t *testing.T) {
   y := &streamCloseChecker{NilStream(), &simpleCloseChecker{closeError: closeError}}
   stream := Concat(x, y)
   closeVerifyResult(t, stream, closeError)
-  verifyCloseCalled(t, x)
-  verifyCloseCalled(t, y)
+  verifyCloseCalled(t, x, true)
+  verifyCloseCalled(t, y, true)
 }
 
 func TestNewStreamFromStreamFunc(t *testing.T) {
@@ -513,9 +513,9 @@ func TestFlattenPropagateCloseError(t *testing.T) {
     t.Errorf("Expected closeError, got %v", err)
   }
   closeVerifyResult(t, stream, nil)
-  verifyCloseCalled(t, first)
-  verifyCloseCalled(t, second)
-  verifyCloseCalled(t, s)
+  verifyCloseCalled(t, first, true)
+  verifyCloseCalled(t, second, true)
+  verifyCloseCalled(t, s, true)
 }
 
 func TestFlattenCloseNormal(t *testing.T) {
@@ -534,8 +534,8 @@ func TestFlattenCloseNormal(t *testing.T) {
   slice := Slice(stream, 0, 2)
   toIntArray(slice)
   closeVerifyResult(t, slice, nil)
-  verifyCloseCalled(t, s)
-  verifyCloseCalled(t, first)
+  verifyCloseCalled(t, s, true)
+  verifyCloseCalled(t, first, true)
   // second stream not closed because it was never yielded
 }
 
@@ -554,9 +554,9 @@ func TestFlattenCloseError1(t *testing.T) {
   slice := Slice(stream, 0, 3)
   toIntArray(slice)
   closeVerifyResult(t, slice, closeError)
-  verifyCloseCalled(t, s)
-  verifyCloseCalled(t, first)
-  verifyCloseCalled(t, second)
+  verifyCloseCalled(t, s, true)
+  verifyCloseCalled(t, first, true)
+  verifyCloseCalled(t, second, true)
 }
 
 func TestFlattenCloseError2(t *testing.T) {
@@ -574,7 +574,7 @@ func TestFlattenCloseError2(t *testing.T) {
   slice := Slice(stream, 0, 0)
   toIntArray(slice)
   closeVerifyResult(t, slice, closeError)
-  verifyCloseCalled(t, s)
+  verifyCloseCalled(t, s, true)
   // first and second stream not closed because they were never yielded
 }
 
@@ -983,8 +983,8 @@ func closeVerifyResult(t *testing.T, c io.Closer, expected error) {
   }
 }
 
-func verifyCloseCalled(t *testing.T, item closeChecker) {
-  if !item.closeCalled() {
+func verifyCloseCalled(t *testing.T, item closeChecker, isClosed bool) {
+  if item.closeCalled() != isClosed {
     t.Error("Expected Close called on all underlying streams.")
   }
 }

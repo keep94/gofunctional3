@@ -72,7 +72,35 @@ func TestReadPastEndConsumer(t *testing.T) {
   }
 }
 
-// TODO: TestModifyConsumerStream
+func TestModifyConsumerStream(t *testing.T) {
+  s := &streamCloseChecker{Count(), &simpleCloseChecker{}}
+  var slice *streamCloseChecker
+  f := func(s Stream) Stream {
+    slice = &streamCloseChecker{s, &simpleCloseChecker{}}
+    return slice
+  }
+  mc := ModifyConsumerStream(newEvenNumberConsumer(), f)
+  if err := mc.Consume(s); err != nil {
+    t.Errorf("Expected no error, got %v", err)
+  }
+  verifyCloseCalled(t, slice, true)
+  verifyCloseCalled(t, s, false)
+}
+
+func TestModifyConsumerStreamError(t *testing.T) {
+  s := &streamCloseChecker{Count(), &simpleCloseChecker{}}
+  var slice *streamCloseChecker
+  f := func(s Stream) Stream {
+    slice = &streamCloseChecker{s, &simpleCloseChecker{closeError: closeError}}
+    return slice
+  }
+  mc := ModifyConsumerStream(newEvenNumberConsumer(), f)
+  if err := mc.Consume(s); err != closeError {
+    t.Errorf("Expected closeError, got %v", err)
+  }
+  verifyCloseCalled(t, slice, true)
+  verifyCloseCalled(t, s, false)
+}
 
 type filterConsumer struct {
   f Filterer
