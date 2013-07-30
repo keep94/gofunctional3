@@ -8,16 +8,20 @@ package functional
 // A Consumer of T consumes the T values from a Stream of T.
 type Consumer interface {
 
-  // Consume consumes values from Stream s
-  Consume(s Stream)
+  // Consume consumes values from Stream s.
+  Consume(s Stream) error
 }
 
 // ModifyConsumerStream returns a new Consumer that applies f to its Stream
 // and then gives the result to c. If c is a Consumer of T and f takes a
 // Stream of U and returns a Stream of T, then ModifyConsumerStream returns a
 // Consumer of U.
+// The returned Consumer's Consume method  will close the Stream that f
+// returns but not Stream passed to it. It does this by wrapping the Stream
+// passed to it with NoCloseStream.
 func ModifyConsumerStream(c Consumer, f func(s Stream) Stream) Consumer {
-  return &modifiedConsumerStream{c, f}
+//  return &modifiedConsumerStream{c, f}
+  return nil
 }
 
 // MultiConsume consumes the values of s, a Stream of T, sending those T
@@ -26,8 +30,10 @@ func ModifyConsumerStream(c Consumer, f func(s Stream) Stream) Consumer {
 // ptr is a *T that receives the values from s. copier is a Copier
 // of T used to copy T values to the Streams sent to each Consumer in
 // consumers. Passing null for copier means use simple assignment.
-// Finally MultiConsume closes s and returns the result.
-func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consumer) (closeError error) {
+// MultiConsume returns all the errors from the individual Consume methods.
+// The order of the returned errors matches the order of the consumers.
+func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consumer) (closeErrors []error) {
+/*
   defer func() {
     closeError = s.Close()
   }()
@@ -53,6 +59,7 @@ func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consume
       }
     }
   }
+*/
   return
 }
 
