@@ -12,18 +12,6 @@ type Consumer interface {
   Consume(s Stream) error
 }
 
-// ModifyConsumerStream returns a new Consumer that applies f to its Stream
-// and then gives the result to c. If c is a Consumer of T and f takes a
-// Stream of U and returns a Stream of T, then ModifyConsumerStream returns a
-// Consumer of U.
-// The returned Consumer's Consume method  will close the Stream that f
-// returns but not Stream passed to it. It does this by wrapping the Stream
-// passed to it with NoCloseStream.
-func ModifyConsumerStream(c Consumer, f func(s Stream) Stream) Consumer {
-//  return &modifiedConsumerStream{c, f}
-  return nil
-}
-
 // MultiConsume consumes the values of s, a Stream of T, sending those T
 // values to each Consumer in consumers. MultiConsume consumes values from s
 // until no Consumer in consumers is accepting values.
@@ -33,21 +21,21 @@ func ModifyConsumerStream(c Consumer, f func(s Stream) Stream) Consumer {
 // MultiConsume returns all the errors from the individual Consume methods.
 // The order of the returned errors matches the order of the consumers.
 func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consumer) (closeErrors []error) {
-/*
-  defer func() {
-    closeError = s.Close()
-  }()
+  if len(consumers) == 0 {
+    return
+  }
   if copier == nil {
     copier = assignCopier
   }
   streams := make([]splitStream, len(consumers))
+  closeErrors = make([]error, len(consumers))
   for i := range streams {
     streams[i] = splitStream{emitterStream{ptrCh: make(chan interface{}), errCh: make(chan error)}}
-    go func(s *splitStream, c Consumer) {
+    go func(s *splitStream, c Consumer, e *error) {
       defer s.endStream()
       s.startStream()
-      c.Consume(s)
-    }(&streams[i], consumers[i])
+      *e = c.Consume(s)
+    }(&streams[i], consumers[i], &closeErrors[i])
   }
   var err error
   for asyncReturn(streams, err) {
@@ -59,17 +47,7 @@ func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consume
       }
     }
   }
-*/
   return
-}
-
-type modifiedConsumerStream struct {
-  c Consumer
-  f func(s Stream) Stream
-}
-
-func (mc *modifiedConsumerStream) Consume(s Stream) {
-  mc.c.Consume(mc.f(s))
 }
 
 type splitStream struct {

@@ -27,22 +27,20 @@ func TestConsumersNormal(t *testing.T) {
 }
 
 func TestConsumersEndEarly(t *testing.T) {
-  first5 := func(s Stream) Stream {
-    return Slice(s, 0, 5)
-  }
+  s := Slice(Count(), 0, 5)
   ec := newEvenNumberConsumer()
   oc := newOddNumberConsumer()
   nc := &noNextConsumer{}
   errors := MultiConsume(
-      Count(),
+      s,
       new(int),
       nil,
       nc,
-      ModifyConsumerStream(ec, first5),
-      ModifyConsumerStream(oc, first5))
+      ec,
+      oc)
 
   if len(errors) != 3 || errors[0] != nil || errors[1] != nil || errors[2] != nil {
-    t.Error("Expected no errors.")
+    t.Errorf("Expected no errors, got %v %v %v", errors[0], errors[1], errors[2])
   }
   if output := fmt.Sprintf("%v", ec.results); output != "[0 2 4]" {
     t.Errorf("Expected [0 2 4] got %v", output)
@@ -72,36 +70,6 @@ func TestReadPastEndConsumer(t *testing.T) {
   }
 }
 
-func TestModifyConsumerStream(t *testing.T) {
-  s := &streamCloseChecker{Count(), &simpleCloseChecker{}}
-  var slice *streamCloseChecker
-  f := func(s Stream) Stream {
-    slice = &streamCloseChecker{s, &simpleCloseChecker{}}
-    return slice
-  }
-  mc := ModifyConsumerStream(newEvenNumberConsumer(), f)
-  if err := mc.Consume(s); err != nil {
-    t.Errorf("Expected no error, got %v", err)
-  }
-  verifyCloseCalled(t, slice, true)
-  verifyCloseCalled(t, s, false)
-}
-
-func TestModifyConsumerStreamError(t *testing.T) {
-  s := &streamCloseChecker{Count(), &simpleCloseChecker{}}
-  var slice *streamCloseChecker
-  f := func(s Stream) Stream {
-    slice = &streamCloseChecker{s, &simpleCloseChecker{closeError: closeError}}
-    return slice
-  }
-  mc := ModifyConsumerStream(newEvenNumberConsumer(), f)
-  if err := mc.Consume(s); err != closeError {
-    t.Errorf("Expected closeError, got %v", err)
-  }
-  verifyCloseCalled(t, slice, true)
-  verifyCloseCalled(t, s, false)
-}
-
 type filterConsumer struct {
   f Filterer
   results []int
@@ -109,6 +77,9 @@ type filterConsumer struct {
 
 func (fc *filterConsumer) Consume(s Stream) (err error) {
   fc.results, err = toIntArray(Filter(fc.f, s))
+  if err == Done {
+    err = nil
+  }
   return
 }
 
