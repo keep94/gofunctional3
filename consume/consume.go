@@ -7,36 +7,42 @@
 package consume
 
 import (
-  "github.com/keep94/gofunctional2/functional"
+  "github.com/keep94/gofunctional3/functional"
   "reflect"
 )
 
-// ErrorReportingConsumer is a Consumer that reports if an error was
-// encountered consuming a stream.
-type ErrorReportingConsumer interface {
-  functional.Consumer
-  // Returns error if one occurred; otherwise returns nil.
-  Error() error
+// ModifyConsumerStream returns a new Consumer that applies f to its Stream
+// and then gives the result to c. If c is a Consumer of T and f takes a
+// Stream of U and returns a Stream of T, then ModifyConsumerStream returns a
+// Consumer of U.
+// The returned Consumer's Consume method  will close the Stream that f
+// returns but not Stream passed to it. It does this by wrapping the Stream
+// passed to it with NoCloseStream.
+func ModifyConsumerStream(
+    c functional.Consumer,
+    f func(s functional.Stream) functional.Stream) functional.Consumer {
+//  return &modifiedConsumerStream{c, f}
+  return nil
 }
 
-// Compose returns an ErrorReportingConsumer
-// that sends values it consumes to each one of consumers. The returned
-// ErrorReportingConsumer reports an error if any of consumers reports
-// an error. ptr is a *T where T values being consumed are temporarily held;
+// Compose returns a Consumer that sends values it consumes to each one of
+// consumers. The returned Consumer's Consume method reports an error if 
+// the Consume method in any of consumers reports an error.
+// ptr is a *T where T values being consumed are temporarily held;
 // copier knows how to copy the values of type T being consumed
 // (can be nil if simple assignment should be used). If caller passes a slice
 // for consumers, no copy is made of it.
 func Compose(
     ptr interface{},
     copier functional.Copier,
-    consumers ...ErrorReportingConsumer) ErrorReportingConsumer {
-  return &compositeConsumer{ptr: ptr, copier: copier, consumers: consumers}
+    consumers ...functional.Consumer) functional.Consumer {
+//  return &compositeConsumer{ptr: ptr, copier: copier, consumers: consumers}
+  return nil
 }
 
-// Filter creates a new ErrorReportingConsumer whose Consume method applies
-// f to the Stream before passing it onto c.
-func Filter(
-    c ErrorReportingConsumer, f functional.Filterer) ErrorReportingConsumer {
+// Filter creates a new Consumer whose Consume method applies f to the
+// Stream before passing it onto c.
+func Filter(c functional.Consumer, f functional.Filterer) functional.Consumer {
   return Modify(
       c,
       func(s functional.Stream) functional.Stream {
@@ -44,14 +50,18 @@ func Filter(
       })
 }
 
-// Modify returns a new ErrorReportingConsumer
-// that applies f to its Stream and then gives the result to erc. If erc is
-// a Consumer of T and f takes a Stream of U and returns a Stream of T, then
-// Modify returns a Consumer of U.
+// Modify returns a new Consumer
+// that applies f to its Stream and then gives the resulting Stream to c.
+// If c is a Consumer of T and f takes a Stream of U and returns a Stream of T,
+// then Modify returns a Consumer of U.
+// The Consume method of the returned will close the Stream that f
+// returns but not the original Stream. It does this by wrapping the
+// original  Stream with NoCloseStream.
 func Modify(
-    erc ErrorReportingConsumer,
-    f func(s functional.Stream) functional.Stream) ErrorReportingConsumer {
-  return &modifyConsumer{ErrorReportingConsumer: erc, f: f}
+    c functional.Consumer,
+    f func(s functional.Stream) functional.Stream) functional.Consumer {
+//  return &modifyConsumer{ErrorReportingConsumer: erc, f: f}
+  return nil
 }
 
 // Buffer reads T values from a Stream of T until it either fills up or
@@ -59,7 +69,6 @@ func Modify(
 type Buffer struct {
   buffer reflect.Value
   addrFunc func(reflect.Value) interface{}
-  err error
   idx int
 }
 
@@ -83,18 +92,13 @@ func (b *Buffer) Values() interface{} {
   return b.buffer.Slice(0, b.idx).Interface()
 }
 
-// Error returns any error from last call to Consume.
-func (b *Buffer) Error() error {
-  return b.err
-}
-
 // Consume fetches the values. s is a Stream of T.
-func (b *Buffer) Consume(s functional.Stream) {
-  defer s.Close()
-  b.idx, b.err = readStreamIntoSlice(s, b.buffer, b.addrFunc)
-  if b.err == functional.Done {
-    b.err = nil
+func (b *Buffer) Consume(s functional.Stream) (err error) {
+  b.idx, err = readStreamIntoSlice(s, b.buffer, b.addrFunc)
+  if err == functional.Done {
+    err = nil
   }
+  return
 }
 
 // GrowingBuffer reads values from a Stream of T until the stream is exausted.
@@ -106,7 +110,6 @@ type GrowingBuffer struct {
   addrFunc func(reflect.Value) interface{}
   creater func() reflect.Value
   idx int
-  err error
 }
 
 // NewGrowingBuffer creates a new GrowingBuffer that stores the read values
@@ -159,30 +162,24 @@ func NewPtrGrowingBuffer(
 }
 
 // Consume fetches the values. s is a Stream of T.
-func (g *GrowingBuffer) Consume(s functional.Stream) {
-  defer s.Close()
-  g.err = nil
+func (g *GrowingBuffer) Consume(s functional.Stream) (err error) {
   g.idx = 0
-  for g.err == nil {
+  for err == nil {
     bufLen := g.buffer.Len()
     if g.idx == bufLen {
       g.buffer = g.ensureCapacity(g.buffer, 2 * bufLen)
       bufLen = g.buffer.Len()
     }
     var numRead int
-    numRead, g.err = readStreamIntoSlice(s, g.buffer.Slice(g.idx, bufLen), g.addrFunc)
+    numRead, err = readStreamIntoSlice(s, g.buffer.Slice(g.idx, bufLen), g.addrFunc)
     g.idx += numRead
   }
-  if g.err == functional.Done {
-    g.err = nil
+  if err == functional.Done {
+    err = nil
   }
+  return
 }
   
-// Error returns any error from last call to Consume.
-func (g *GrowingBuffer) Error() error {
-  return g.err
-}
-
 // Values returns the values gathered from the last Consume call.
 // Returned value is a []T or []*T depending on whether
 // NewGrowingBuffer or NewPtrGrowingBuffer was used to create this instance.
@@ -227,7 +224,6 @@ type PageBuffer struct {
   page_no int
   is_end bool
   idx int
-  err error
 }
 
 // NewPageBuffer returns a new PageBuffer instance.
@@ -279,41 +275,35 @@ func (pb *PageBuffer) PageNo() int {
   return pb.page_no
 }
 
-// Error returns any error from last call to Consume.
-func (pb *PageBuffer) Error() error {
-  return pb.err
-}
-
 // End returns true if last page reached.
 func (pb *PageBuffer) End() bool {
   return pb.is_end
 }
 
 // Consume fetches the values. s is a Stream of T.
-func (pb *PageBuffer) Consume(s functional.Stream) {
-  defer s.Close()
+func (pb *PageBuffer) Consume(s functional.Stream) (err error) {
   pb.page_no = 0
   pb.idx = 0
   pb.is_end = false
-  pb.err = nil
-  for pb.err == nil && !pb.isDesiredPageRead() {
+  for err == nil && !pb.isDesiredPageRead() {
     if pb.idx > 0 {
       pb.page_no++
     }
     offset := pb.pageOffset(pb.page_no)
-    pb.idx, pb.err = readStreamIntoSlice(
+    pb.idx, err = readStreamIntoSlice(
         s, pb.buffer.Slice(offset, offset + pb.pageLen), pb.addrFunc)
   }
-  if pb.err == nil {
+  if err == nil {
     pb.is_end = s.Next(pb.addrFunc(pb.buffer.Index(pb.pageOffset(pb.page_no + 1)))) == functional.Done
-  } else if pb.err == functional.Done {
+  } else if err == functional.Done {
     pb.is_end = true
-    pb.err = nil
+    err = nil
     if pb.page_no > 0 && pb.idx == 0 {
       pb.page_no--
       pb.idx = pb.pageLen
     }
   }
+  return
 }
 
 func (pb *PageBuffer) pageOffset(pageNo int) int {
@@ -328,15 +318,8 @@ func (pb *PageBuffer) isDesiredPageRead() bool {
 }
 
 // FirstOnly reads the first value from stream storing it in ptr.
-// FirstOnly closes the stream.
 // FirstOnly returns emptyError if no values were on stream.
 func FirstOnly(stream functional.Stream, emptyError error, ptr interface{}) (err error) {
-  defer func() {
-    closeError := stream.Close()
-    if err == nil {
-      err = closeError
-    }
-  }()
   err = stream.Next(ptr)
   if err == functional.Done {
     err = emptyError
@@ -345,6 +328,8 @@ func FirstOnly(stream functional.Stream, emptyError error, ptr interface{}) (err
   return
 }
 
+/*
+// TODO: modify compositeConsumer
 type compositeConsumer struct {
   ptr interface{}
   copier functional.Copier
@@ -377,6 +362,16 @@ type modifyConsumer struct {
 func (c *modifyConsumer) Consume(s functional.Stream) {
   c.ErrorReportingConsumer.Consume(c.f(s))
 }
+
+type modifiedConsumerStream struct {
+  c Consumer
+  f func(s Stream) Stream
+}
+
+func (mc *modifiedConsumerStream) Consume(s Stream) {
+  mc.c.Consume(mc.f(s))
+}
+*/
 
 func forValue(value reflect.Value) interface{} {
   return value.Addr().Interface()

@@ -7,7 +7,7 @@ package consume
 
 import (
   "errors"
-  "github.com/keep94/gofunctional2/functional"
+  "github.com/keep94/gofunctional3/functional"
   "testing"
 )
 
@@ -21,60 +21,51 @@ var (
 )
 
 func TestPtrBuffer(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Count()}
+  stream := functional.Count()
   b := newPtrBuffer(5)
-  b.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, b, stream, nil)
   verifyPtrFetched(t, b, 0, 5)
 }
 
 func TestBufferSameSize(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Slice(functional.Count(), 0, 5)}
+  stream := functional.Slice(functional.Count(), 0, 5)
   b := NewBuffer(make([]int, 5))
-  b.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, b, stream, nil)
   verifyFetched(t, b, 0, 5)
 }
 
 func TestBufferSmall(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Slice(functional.Count(), 0, 6)}
+  stream := functional.Slice(functional.Count(), 0, 6)
   b := NewBuffer(make([]int, 5))
-  b.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, b, stream, nil)
   verifyFetched(t, b, 0, 5)
 }
 
 func TestBufferBig(t *testing.T) {
   stream := functional.Slice(functional.Count(), 0, 4)
   b := NewBuffer(make([]int, 5))
-  b.Consume(stream)
+  doConsume(t, b, stream, nil)
   verifyFetched(t, b, 0, 4)
 }
 
 func TestBufferError(t *testing.T) {
-  stream := &closeChecker{Stream: errorStream{otherError}}
+  stream := errorStream{otherError}
   b := NewBuffer(make([]int, 5))
-  b.Consume(stream)
-  if err := b.Error(); err != otherError {
-    t.Errorf("Expected error otherError, got %v", err)
-  }
+  doConsume(t, b, stream, otherError)
 }
 
 func TestPtrGrowingBuffer(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Slice(functional.Count(), 0, 6)}
+  stream := functional.Slice(functional.Count(), 0, 6)
   b := NewPtrGrowingBuffer(intPtrSlice, 5, nil)
-  var c ErrorReportingConsumer = b
-  c.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, b, stream, nil)
   verifyPtrFetched(t, b, 0, 6)
 }
 
 func TestPtrGrowingBuffer2(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Slice(functional.Count(), 0, 6)}
+  stream := functional.Slice(functional.Count(), 0, 6)
   b := NewPtrGrowingBuffer(
       intPtrSlice, 1, func() interface{} { return new(int) })
-  b.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, b, stream, nil)
   verifyPtrFetched(t, b, 0, 6)
   if actual := cap(b.Values().([]*int)); actual != 8 {
     t.Errorf("Expected capacit of 8, got %v", actual)
@@ -82,18 +73,16 @@ func TestPtrGrowingBuffer2(t *testing.T) {
 }
 
 func TestGrowingBufferSameSize(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Slice(functional.Count(), 0, 5)}
+  stream := functional.Slice(functional.Count(), 0, 5)
   b := NewGrowingBuffer(intSlice, 5)
-  b.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, b, stream, nil)
   verifyFetched(t, b, 0, 5)
 }
 
 func TestGrowingBufferSmall(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Slice(functional.Count(), 0, 6)}
+  stream := functional.Slice(functional.Count(), 0, 6)
   b := NewGrowingBuffer(intSlice, 5)
-  b.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, b, stream, nil)
   verifyFetched(t, b, 0, 6)
   if actual := cap(b.Values().([]int)); actual != 10 {
     t.Errorf("Expected capacit of 10, got %v", actual)
@@ -101,10 +90,9 @@ func TestGrowingBufferSmall(t *testing.T) {
 }
 
 func TestGrowingBufferBig(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Slice(functional.Count(), 0, 4)}
+  stream := functional.Slice(functional.Count(), 0, 4)
   b := NewGrowingBuffer(intSlice, 5)
-  b.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, b, stream, nil)
   verifyFetched(t, b, 0, 4)
   if actual := cap(b.Values().([]int)); actual != 5 {
     t.Errorf("Expected capacity of 5, got %v", actual)
@@ -112,141 +100,120 @@ func TestGrowingBufferBig(t *testing.T) {
 }
 
 func TestGrowingBufferError(t *testing.T) {
-  stream := &closeChecker{Stream: errorStream{otherError}}
+  stream := errorStream{otherError}
   b := NewGrowingBuffer(intSlice, 5)
-  b.Consume(stream)
-  if err := b.Error(); err != otherError {
-    t.Errorf("Expected error otherError, got %v", err)
-  }
+  doConsume(t, b, stream, otherError)
   if actual := len(b.Values().([]int)); actual != 0 {
     t.Errorf("Expected length of 0, got %v", actual)
   }
 }
 
 func TestPtrPageBuffer(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Count()}
+  stream := functional.Count()
   pb := newPtrPageBuffer(6, 0)
-  pb.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, pb, stream, nil)
   verifyPtrPageFetched(t, pb, 0, 3, 0, false)
 }
 
 func TestPageBufferFirstPage(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Count()}
+  stream := functional.Count()
   pb := NewPageBuffer(make([]int, 6), 0)
-  pb.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 0, 3, 0, false)
 }
 
 func TestPageBufferSecondPage(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Count()}
+  stream := functional.Count()
   pb := NewPageBuffer(make([]int, 6), 1)
-  pb.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 3, 6, 1, false)
 }
 
 func TestPageBufferThirdPage(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Count()}
+  stream := functional.Count()
   pb := NewPageBuffer(make([]int, 6), 2)
-  pb.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 6, 9, 2, false)
 }
 
 func TestPageBufferNegativePage(t *testing.T) {
-  stream := &closeChecker{Stream: functional.Count()}
+  stream := functional.Count()
   pb := NewPageBuffer(make([]int, 6), -1)
-  pb.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 0, 3, 0, false)
 }
 
 func TestPageBufferParitalThird(t *testing.T) {
-  stream := &closeChecker{
-      Stream: functional.Slice(functional.Count(), 0, 7)}
+  stream := functional.Slice(functional.Count(), 0, 7)
   pb := NewPageBuffer(make([]int, 6), 2)
-  pb.Consume(stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 6, 7, 2, true)
 }
 
 func TestPageBufferParitalThirdToHigh(t *testing.T) {
-  stream := &closeChecker{
-      Stream: functional.Slice(functional.Count(), 0, 7)}
+  stream := functional.Slice(functional.Count(), 0, 7)
   pb := NewPageBuffer(make([]int, 6), 3)
-  pb.Consume(stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 6, 7, 2, true)
 }
 
 func TestPageBufferEmptyThird(t *testing.T) {
-  stream := &closeChecker{
-      Stream: functional.Slice(functional.Count(), 0, 6)}
+  stream := functional.Slice(functional.Count(), 0, 6)
   pb := NewPageBuffer(make([]int, 6), 2)
-  pb.Consume(stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 3, 6, 1, true)
 }
 
 func TestPageBufferEmptyThirdTooHigh(t *testing.T) {
-  stream := &closeChecker{
-      Stream: functional.Slice(functional.Count(), 0, 6)}
+  stream := functional.Slice(functional.Count(), 0, 6)
   pb := NewPageBuffer(make([]int, 6), 3)
-  pb.Consume(stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 3, 6, 1, true)
 }
 
 func TestPageBufferFullSecond(t *testing.T) {
-  stream := &closeChecker{
-      Stream: functional.Slice(functional.Count(), 0, 6)}
+  stream := functional.Slice(functional.Count(), 0, 6)
   pb := NewPageBuffer(make([]int, 6), 1)
-  pb.Consume(stream)
-  verifyClosed(t, stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 3, 6, 1, true)
 }
 
 func TestPageBufferParitalFirst(t *testing.T) {
-  stream := &closeChecker{
-      Stream: functional.Slice(functional.Count(), 0, 1)}
+  stream := functional.Slice(functional.Count(), 0, 1)
   pb := NewPageBuffer(make([]int, 6), 0)
-  pb.Consume(stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 0, 1, 0, true)
 }
 
 func TestPageBufferEmpty(t *testing.T) {
-  stream := &closeChecker{
-      Stream: functional.NilStream()}
+  stream := functional.NilStream()
   pb := NewPageBuffer(make([]int, 6), 0)
-  pb.Consume(stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 0, 0, 0, true)
 }
 
 func TestPageBufferEmptyHigh(t *testing.T) {
-  stream := &closeChecker{
-      Stream: functional.NilStream()}
+  stream := functional.NilStream()
   pb := NewPageBuffer(make([]int, 6), 1)
-  pb.Consume(stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 0, 0, 0, true)
 }
 
 func TestPageBufferEmptyLow(t *testing.T) {
-  stream := &closeChecker{
-      Stream: functional.NilStream()}
+  stream := functional.NilStream()
   pb := NewPageBuffer(make([]int, 6), -1)
-  pb.Consume(stream)
+  doConsume(t, pb, stream, nil)
   verifyPageFetched(t, pb, 0, 0, 0, true)
 }
 
 func TestPageBufferError(t *testing.T) {
-  stream := &closeChecker{Stream: errorStream{otherError}}
+  stream := errorStream{otherError}
   b := NewPageBuffer(make([]int, 6), 0)
-  b.Consume(stream)
-  if err := b.Error(); err != otherError {
-    t.Errorf("Expected error otherError, got %v", err)
-  }
+  doConsume(t, b, stream, otherError)
 }
 
 func TestFirstOnly(t *testing.T) {
-  stream := &closeChecker{Stream: functional.CountFrom(3, 1)}
+  stream := functional.CountFrom(3, 1)
   var value int
   if output := FirstOnly(stream, emptyError, &value); output != nil {
     t.Errorf("Got error fetching first value, %v", output)
@@ -254,7 +221,6 @@ func TestFirstOnly(t *testing.T) {
   if value != 3 {
     t.Errorf("Expected 3, got %v", value)
   }
-  verifyClosed(t, stream)
 }
 
 func TestFirstOnlyEmpty(t *testing.T) {
@@ -266,16 +232,15 @@ func TestFirstOnlyEmpty(t *testing.T) {
 }
 
 func TestFirstOnlyError(t *testing.T) {
-  stream := &closeChecker{Stream: errorStream{otherError}}
+  stream := errorStream{otherError}
   var value int
   if output := FirstOnly(stream, emptyError, &value); output != otherError {
     t.Errorf("Expected emptyError, got %v", output)
   }
-  verifyClosed(t, stream)
 }
 
 func TestFirstOnlyCloseError(t *testing.T) {
-  stream := closeErrorStream{Stream: functional.Count()}
+  stream := functional.Count()
   var value int
   if output := FirstOnly(stream, emptyError, &value); output != closeError {
     t.Errorf("Expected closeError, got %v", output)
@@ -283,15 +248,11 @@ func TestFirstOnlyCloseError(t *testing.T) {
 }
 
 func TestCompose(t *testing.T) {
-  consumer1 := errorReportingConsumerForTesting{}
-  consumer2 := errorReportingConsumerForTesting{}
-  errorReportingConsumer := Compose(
+  consumer1 := consumerForTesting{}
+  consumer2 := consumerForTesting{}
+  consumer := Compose(
       new(int), nil, &consumer1, &consumer2)
-  errorReportingConsumer.Consume(
-      closeErrorStream{functional.Slice(functional.Count(), 0, 5)})
-  if err := errorReportingConsumer.Error(); err != closeError {
-    t.Errorf("Expected closeError, got %v", err)
-  }
+  doConsume(t, consumer, functional.Slice(functional.Count(), 0, 5), nil)
   if output := consumer1.count; output != 5 {
     t.Errorf("Expected 5, got %v", output)
   }
@@ -300,57 +261,56 @@ func TestCompose(t *testing.T) {
   }
 }
 
-func TestCompose2(t *testing.T) {
-  consumer1 := errorReportingConsumerForTesting{}
-  consumer2 := errorReportingConsumerForTesting{e: consumerError}
-  errorReportingConsumer := Compose(
+func TestComposeError(t *testing.T) {
+  consumer1 := consumerForTesting{}
+  consumer2 := consumerForTesting{e: consumerError}
+  consumer := Compose(
       new(int),
       nil,
       &consumer1,
-      Modify(
-          &consumer2,
-          func (s functional.Stream) functional.Stream {
-            return functional.Slice(s, 0, 2)
-          }))
-  errorReportingConsumer.Consume(
-      closeErrorStream{functional.Slice(functional.Count(), 0, 5)})
-  if err := errorReportingConsumer.Error(); err != consumerError {
-    t.Errorf("Expected consumerError, got %v", err)
+      &consumer2)
+  doConsume(t, consumer, functional.Slice(functional.Count(), 0, 5), consumerError)
+}
+
+func TestModifyConsumerStreamAutoClose(t *testing.T) {
+  s := &closeChecker{Stream: functional.Count()}
+  var slice *closeChecker
+  f := func(s functional.Stream) functional.Stream {
+    slice = &closeChecker{Stream: functional.Slice(s, 0, 5)}
+    return slice
   }
-  if output := consumer1.count; output != 5 {
-    t.Errorf("Expected 5, got %v", output)
+  mc := Modify(&consumerForTesting{}, f)
+  doConsume(t, mc, s, nil)
+  verifyClosed(t, slice, true)
+  verifyClosed(t, s, false)
+}
+
+func TestModifyConsumerStreamAutoCloseError(t *testing.T) {
+  s := &closeChecker{Stream: functional.Count()}
+  var slice *closeChecker
+  f := func(s functional.Stream) functional.Stream {
+    slice = &closeChecker{Stream: closeErrorStream{functional.Slice(s, 0, 5)}}
+    return slice
   }
-  if output := consumer2.count; output != 2 {
-    t.Errorf("Expected 2, got %v", output)
-  }
+  mc := Modify(&consumerForTesting{}, f)
+  doConsume(t, mc, s, closeError)
+  verifyClosed(t, slice, true)
+  verifyClosed(t, s, false)
 }
 
 type abstractBuffer interface {
-  Error() error
   Values() interface{}
 }
 
 func verifyFetched(t *testing.T, b abstractBuffer, start int, end int) {
-  if err := b.Error(); err != nil {
-    t.Errorf("Got error fetching values, %v", err)
-    return
-  }
   verifyValues(t, b.Values().([]int), start, end)
 }
 
 func verifyPtrFetched(t *testing.T, b abstractBuffer, start int, end int) {
-  if err := b.Error(); err != nil {
-    t.Errorf("Got error fetching values, %v", err)
-    return
-  }
   verifyPtrValues(t, b.Values().([]*int), start, end)
 }
 
 func verifyPageFetched(t *testing.T, pb *PageBuffer, start int, end int, page_no int, is_end bool) {
-  if err := pb.Error(); err != nil {
-    t.Errorf("Got error fetching page values, %v", err)
-    return
-  }
   verifyValues(t, pb.Values().([]int), start, end)
   if output := pb.PageNo(); output != page_no {
     t.Errorf("Expected page %v, got %v", page_no, output)
@@ -361,10 +321,6 @@ func verifyPageFetched(t *testing.T, pb *PageBuffer, start int, end int, page_no
 }
 
 func verifyPtrPageFetched(t *testing.T, pb *PageBuffer, start int, end int, page_no int, is_end bool) {
-  if err := pb.Error(); err != nil {
-    t.Errorf("Got error fetching page values, %v", err)
-    return
-  }
   verifyPtrValues(t, pb.Values().([]*int), start, end)
   if output := pb.PageNo(); output != page_no {
     t.Errorf("Expected page %v, got %v", page_no, output)
@@ -398,9 +354,11 @@ func verifyPtrValues(t *testing.T, values []*int, start int, end int) {
   }
 }
 
-func verifyClosed(t *testing.T, c *closeChecker) {
-  if !c.closed {
-    t.Error("Stream not closed.")
+func verifyClosed(t *testing.T, c *closeChecker, isClosed bool) {
+  if isClosed && !c.closed {
+    t.Error("Expected stream to be closed.")
+  } else if !isClosed && c.closed {
+    t.Error("Expected stream to be opened.")
   }
 }
 
@@ -426,19 +384,16 @@ func (e errorStream) Close() error {
   return nil
 }
 
-type errorReportingConsumerForTesting struct {
+type consumerForTesting struct {
   count int
   e error
 }
 
-func (c *errorReportingConsumerForTesting) Consume(s functional.Stream) {
+func (c *consumerForTesting) Consume(s functional.Stream) error {
   var x int
   for s.Next(&x) != functional.Done {
     c.count++
   }
-}
-
-func (c *errorReportingConsumerForTesting) Error() error {
   return c.e
 }
 
@@ -464,4 +419,14 @@ func newPtrPageBuffer(size, desiredPageNo int) *PageBuffer {
     array[i] = new(int)
   }
   return NewPtrPageBuffer(array, desiredPageNo)
+}
+
+func doConsume(
+    t *testing.T,
+    c functional.Consumer,
+    s functional.Stream,
+    expectedError error) {
+  if err := c.Consume(s); err != expectedError {
+    t.Errorf("Expected %v, got %v", expectedError, err)
+  }
 }

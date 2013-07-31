@@ -984,8 +984,10 @@ func closeVerifyResult(t *testing.T, c io.Closer, expected error) {
 }
 
 func verifyCloseCalled(t *testing.T, item closeChecker, isClosed bool) {
-  if item.closeCalled() != isClosed {
-    t.Error("Expected Close called on all underlying streams.")
+  if isClosed && !item.closeCalled() {
+    t.Error("Expected close to be called.")
+  } else if !isClosed && item.closeCalled() {
+    t.Error("Expected no close call.")
   }
 }
 
