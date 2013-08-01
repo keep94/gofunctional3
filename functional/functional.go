@@ -158,14 +158,14 @@ func Filter(f Filterer, s Stream) Stream {
 // at 0.
 // Calling Close on returned Stream is a no-op.
 func Count() Stream {
-  return &count{0, 1}
+  return &count{start: 0, step: 1}
 }
 
 // CountFrom returns an infinite Stream of int emitting values beginning at
 // start and increasing by step.
 // Calling Close on returned Stream is a no-op.
 func CountFrom(start, step int) Stream {
-  return &count{start, step}
+  return &count{start: start, step: step}
 }
 
 // Slice returns a Stream that will emit elements in s starting at index start
@@ -362,16 +362,13 @@ func NewMapper(m func(srcPtr interface{}, destPtr interface{}) error) Mapper {
 type count struct {
   start int
   step int
+  closeDoesNothing
 }
 
 func (c *count) Next(ptr interface{}) error {
   p := ptr.(*int)
   *p = c.start
   c.start += c.step
-  return nil
-}
-
-func (c *count) Close() error {
   return nil
 }
 
@@ -406,14 +403,11 @@ func (f falseFilterer) Filter(ptr interface{}) error {
 }
 
 type nilStream struct {
+  closeDoesNothing
 }
 
 func (s nilStream) Next(ptr interface{}) error {
   return Done
-}
-
-func (s nilStream) Close() error {
-  return nil
 }
 
 type nilMapper struct {
@@ -531,47 +525,6 @@ func (s *lineStream) readRestOfLine(line []byte) (string, error) {
   return string(byteFlatten(lines)), nil
 }
 
-type deferredStream struct {
-  f func() Stream
-  s Stream
-  done bool
-}
-
-func (d *deferredStream) Next(ptr interface{}) error {
-  if d.done {
-    return Done
-  }
-  if d.s == nil {
-    d.s = d.f()
-  }
-  err := d.s.Next(ptr)
-  if err == Done {
-    d.done = true
-    d.s = nil
-  }
-  return err
-}
-
-func (d *deferredStream) Close() error {
-  if d.s != nil {
-    return d.s.Close()
-  }
-  return nil
-}
-
-type cycleStream struct {
-  Stream
-  f func() Stream
-}
-
-func (c *cycleStream) Next(ptr interface{}) error {
-  err := c.Stream.Next(ptr)
-  for ; err == Done; err = c.Stream.Next(ptr) {
-    c.Stream = c.f()
-  }
-  return err
-}
-
 type concatStream struct {
   s []Stream
   idx int
@@ -603,6 +556,7 @@ type plainStream struct {
   sliceValue reflect.Value
   copyFunc func(src reflect.Value, dest interface{})
   index int
+  closeDoesNothing
 }
 
 func (s *plainStream) Next(ptr interface{}) error {
@@ -611,10 +565,6 @@ func (s *plainStream) Next(ptr interface{}) error {
   }
   s.copyFunc(s.sliceValue.Index(s.index), ptr)
   s.index++
-  return nil
-}
-
-func (s *plainStream) Close() error {
   return nil
 }
 
