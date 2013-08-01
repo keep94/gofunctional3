@@ -11,43 +11,6 @@ import (
   "reflect"
 )
 
-// Compose returns a Consumer that sends values it consumes to each one of
-// consumers. The returned Consumer's Consume method reports an error if 
-// the Consume method in any of consumers reports an error.
-// ptr is a *T where T values being consumed are temporarily held;
-// copier knows how to copy the values of type T being consumed
-// (can be nil if simple assignment should be used). If caller passes a slice
-// for consumers, no copy is made of it.
-func Compose(
-    ptr interface{},
-    copier functional.Copier,
-    consumers ...functional.Consumer) functional.Consumer {
-  return &compositeConsumer{ptr: ptr, copier: copier, consumers: consumers}
-}
-
-// Filter creates a new Consumer whose Consume method applies f to the
-// Stream before passing it onto c.
-func Filter(c functional.Consumer, f functional.Filterer) functional.Consumer {
-  return Modify(
-      c,
-      func(s functional.Stream) functional.Stream {
-        return functional.Filter(f, s)
-      })
-}
-
-// Modify returns a new Consumer
-// that applies f to its Stream and then gives the resulting Stream to c.
-// If c is a Consumer of T and f takes a Stream of U and returns a Stream of T,
-// then Modify returns a Consumer of U.
-// The Consume method of the returned Consumer will close the Stream that f
-// returns but not the original Stream. It does this by wrapping the
-// original Stream with NoCloseStream.
-func Modify(
-    c functional.Consumer,
-    f func(s functional.Stream) functional.Stream) functional.Consumer {
-  return &modifyConsumer{c: c, f: f}
-}
-
 // Buffer reads T values from a Stream of T until it either fills up or
 // the Stream is exhaused.
 type Buffer struct {
@@ -309,39 +272,6 @@ func FirstOnly(stream functional.Stream, emptyError error, ptr interface{}) (err
     err = emptyError
     return
   }
-  return
-}
-
-type compositeConsumer struct {
-  ptr interface{}
-  copier functional.Copier
-  consumers []functional.Consumer
-}
-
-func (c *compositeConsumer) Consume(s functional.Stream) error {
-  errors := functional.MultiConsume(s, c.ptr, c.copier, c.consumers...)
-  for _, e := range errors {
-    if e != nil {
-      return e
-    }
-  }
-  return nil
-}
-
-type modifyConsumer struct {
-  c functional.Consumer
-  f func(s functional.Stream) functional.Stream
-}
-
-func (mc *modifyConsumer) Consume(s functional.Stream) (err error) {
-  newS := mc.f(functional.NoCloseStream(s))
-  defer func() {
-    ce := newS.Close()
-    if err == nil {
-      err = ce
-    }
-  }()
-  err = mc.c.Consume(newS)
   return
 }
 

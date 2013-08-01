@@ -239,70 +239,6 @@ func TestFirstOnlyError(t *testing.T) {
   }
 }
 
-func TestCompose(t *testing.T) {
-  consumer1 := consumerForTesting{}
-  consumer2 := consumerForTesting{}
-  consumer := Compose(
-      new(int), nil, &consumer1, &consumer2)
-  doConsume(t, consumer, functional.Slice(functional.Count(), 0, 5), nil)
-  if output := consumer1.count; output != 5 {
-    t.Errorf("Expected 5, got %v", output)
-  }
-  if output := consumer2.count; output != 5 {
-    t.Errorf("Expected 5, got %v", output)
-  }
-}
-
-func TestComposeError(t *testing.T) {
-  consumer1 := consumerForTesting{}
-  consumer2 := consumerForTesting{e: consumerError}
-  consumer := Compose(
-      new(int),
-      nil,
-      &consumer1,
-      &consumer2)
-  doConsume(t, consumer, functional.Slice(functional.Count(), 0, 5), consumerError)
-}
-
-func TestModifyConsumerStreamError(t *testing.T) {
-  s := &closeChecker{Stream: functional.Count()}
-  var slice *closeChecker
-  f := func(s functional.Stream) functional.Stream {
-    slice = &closeChecker{Stream: functional.Slice(s, 0, 5)}
-    return slice
-  }
-  mc := Modify(&consumerForTesting{e: otherError}, f)
-  doConsume(t, mc, s, otherError)
-  verifyClosed(t, slice, true)
-  verifyClosed(t, s, false)
-}
-
-func TestModifyConsumerStreamAutoClose(t *testing.T) {
-  s := &closeChecker{Stream: functional.Count()}
-  var slice *closeChecker
-  f := func(s functional.Stream) functional.Stream {
-    slice = &closeChecker{Stream: functional.Slice(s, 0, 5)}
-    return slice
-  }
-  mc := Modify(&consumerForTesting{}, f)
-  doConsume(t, mc, s, nil)
-  verifyClosed(t, slice, true)
-  verifyClosed(t, s, false)
-}
-
-func TestModifyConsumerStreamAutoCloseError(t *testing.T) {
-  s := &closeChecker{Stream: functional.Count()}
-  var slice *closeChecker
-  f := func(s functional.Stream) functional.Stream {
-    slice = &closeChecker{Stream: closeErrorStream{functional.Slice(s, 0, 5)}}
-    return slice
-  }
-  mc := Modify(&consumerForTesting{}, f)
-  doConsume(t, mc, s, closeError)
-  verifyClosed(t, slice, true)
-  verifyClosed(t, s, false)
-}
-
 type abstractBuffer interface {
   Values() interface{}
 }
@@ -435,3 +371,4 @@ func doConsume(
     t.Errorf("Expected %v, got %v", expectedError, err)
   }
 }
+

@@ -7,9 +7,71 @@ package functional
 
 // A Consumer of T consumes the T values from a Stream of T.
 type Consumer interface {
-
   // Consume consumes values from Stream s.
   Consume(s Stream) error
+}
+
+// ConsumerFunc is an adapter that allows ordinary functions to be used as
+//  Consumers.
+type ConsumerFunc func(s Stream) error
+
+func (f ConsumerFunc) Consume(s Stream) error {
+  return f(s)
+}
+
+// CompositeConsumer returns a Consumer that sends values it consumes to each
+// one of consumers. The returned Consumer's Consume method reports an error if 
+// the Consume method in any of consumers reports an error.
+// ptr is a *T where T values being consumed are temporarily held;
+// copier knows how to copy the values of type T being consumed
+// (can be nil if simple assignment should be used). If caller passes a slice
+// for consumers, no copy is made of it.
+func CompositeConsumer(
+    ptr interface{},
+    copier Copier,
+    consumers ...Consumer) Consumer {
+  return ConsumerFunc(func(s Stream) error {
+    errors := MultiConsume(s, ptr, copier, consumers...)
+    for _, e := range errors {
+      if e != nil {
+        return e
+      }
+    }
+    return nil
+  })
+}
+
+// FilterConsumer creates a new Consumer whose Consume method applies f to the
+// Stream before passing it onto c.
+func FilterConsumer(c Consumer, f Filterer) Consumer {
+  return ModifyConsumer(
+      c,
+      func(s Stream) Stream {
+        return Filter(f, s)
+      })
+}
+
+// ModifyConsumer returns a new Consumer
+// that applies f to its Stream and then gives the resulting Stream to c.
+// If c is a Consumer of T and f takes a Stream of U and returns a Stream of T,
+// then ModifyConsumer returns a Consumer of U.
+// The Consume method of the returned Consumer will close the Stream that f
+// returns but not the original Stream. It does this by wrapping the
+// original Stream with NoCloseStream.
+func ModifyConsumer(
+    c Consumer,
+    f func(s Stream) Stream) Consumer {
+  return ConsumerFunc(func(s Stream) (err error) {
+    newS := f(NoCloseStream(s))
+    defer func() {
+      ce := newS.Close()
+      if err == nil {
+        err = ce
+      }
+    }()
+    err = c.Consume(newS)
+    return
+  })
 }
 
 // MultiConsume consumes the values of s, a Stream of T, sending those T
