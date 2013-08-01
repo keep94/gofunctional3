@@ -239,14 +239,6 @@ func TestFirstOnlyError(t *testing.T) {
   }
 }
 
-func TestFirstOnlyCloseError(t *testing.T) {
-  stream := functional.Count()
-  var value int
-  if output := FirstOnly(stream, emptyError, &value); output != closeError {
-    t.Errorf("Expected closeError, got %v", output)
-  }
-}
-
 func TestCompose(t *testing.T) {
   consumer1 := consumerForTesting{}
   consumer2 := consumerForTesting{}
@@ -270,6 +262,19 @@ func TestComposeError(t *testing.T) {
       &consumer1,
       &consumer2)
   doConsume(t, consumer, functional.Slice(functional.Count(), 0, 5), consumerError)
+}
+
+func TestModifyConsumerStreamError(t *testing.T) {
+  s := &closeChecker{Stream: functional.Count()}
+  var slice *closeChecker
+  f := func(s functional.Stream) functional.Stream {
+    slice = &closeChecker{Stream: functional.Slice(s, 0, 5)}
+    return slice
+  }
+  mc := Modify(&consumerForTesting{e: otherError}, f)
+  doConsume(t, mc, s, otherError)
+  verifyClosed(t, slice, true)
+  verifyClosed(t, s, false)
 }
 
 func TestModifyConsumerStreamAutoClose(t *testing.T) {

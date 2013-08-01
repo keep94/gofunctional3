@@ -11,20 +11,6 @@ import (
   "reflect"
 )
 
-// ModifyConsumerStream returns a new Consumer that applies f to its Stream
-// and then gives the result to c. If c is a Consumer of T and f takes a
-// Stream of U and returns a Stream of T, then ModifyConsumerStream returns a
-// Consumer of U.
-// The returned Consumer's Consume method  will close the Stream that f
-// returns but not Stream passed to it. It does this by wrapping the Stream
-// passed to it with NoCloseStream.
-func ModifyConsumerStream(
-    c functional.Consumer,
-    f func(s functional.Stream) functional.Stream) functional.Consumer {
-//  return &modifiedConsumerStream{c, f}
-  return nil
-}
-
 // Compose returns a Consumer that sends values it consumes to each one of
 // consumers. The returned Consumer's Consume method reports an error if 
 // the Consume method in any of consumers reports an error.
@@ -36,8 +22,7 @@ func Compose(
     ptr interface{},
     copier functional.Copier,
     consumers ...functional.Consumer) functional.Consumer {
-//  return &compositeConsumer{ptr: ptr, copier: copier, consumers: consumers}
-  return nil
+  return &compositeConsumer{ptr: ptr, copier: copier, consumers: consumers}
 }
 
 // Filter creates a new Consumer whose Consume method applies f to the
@@ -54,14 +39,13 @@ func Filter(c functional.Consumer, f functional.Filterer) functional.Consumer {
 // that applies f to its Stream and then gives the resulting Stream to c.
 // If c is a Consumer of T and f takes a Stream of U and returns a Stream of T,
 // then Modify returns a Consumer of U.
-// The Consume method of the returned will close the Stream that f
+// The Consume method of the returned Consumer will close the Stream that f
 // returns but not the original Stream. It does this by wrapping the
-// original  Stream with NoCloseStream.
+// original Stream with NoCloseStream.
 func Modify(
     c functional.Consumer,
     f func(s functional.Stream) functional.Stream) functional.Consumer {
-//  return &modifyConsumer{ErrorReportingConsumer: erc, f: f}
-  return nil
+  return &modifyConsumer{c: c, f: f}
 }
 
 // Buffer reads T values from a Stream of T until it either fills up or
@@ -328,50 +312,38 @@ func FirstOnly(stream functional.Stream, emptyError error, ptr interface{}) (err
   return
 }
 
-/*
-// TODO: modify compositeConsumer
 type compositeConsumer struct {
   ptr interface{}
   copier functional.Copier
-  consumers []ErrorReportingConsumer
-  closeError error
+  consumers []functional.Consumer
 }
 
-func (c *compositeConsumer) Error() error {
-  for _, r := range c.consumers {
-    if err := r.Error(); err != nil {
-      return err
+func (c *compositeConsumer) Consume(s functional.Stream) error {
+  errors := functional.MultiConsume(s, c.ptr, c.copier, c.consumers...)
+  for _, e := range errors {
+    if e != nil {
+      return e
     }
   }
-  return c.closeError
-}
-
-func (c *compositeConsumer) Consume(s functional.Stream) {
-  consumers := make([]functional.Consumer, len(c.consumers))
-  for i := range consumers {
-    consumers[i] = c.consumers[i]
-  }
-  c.closeError = functional.MultiConsume(s, c.ptr, c.copier, consumers...)
+  return nil
 }
 
 type modifyConsumer struct {
-  ErrorReportingConsumer
+  c functional.Consumer
   f func(s functional.Stream) functional.Stream
 }
 
-func (c *modifyConsumer) Consume(s functional.Stream) {
-  c.ErrorReportingConsumer.Consume(c.f(s))
+func (mc *modifyConsumer) Consume(s functional.Stream) (err error) {
+  newS := mc.f(functional.NoCloseStream(s))
+  defer func() {
+    ce := newS.Close()
+    if err == nil {
+      err = ce
+    }
+  }()
+  err = mc.c.Consume(newS)
+  return
 }
-
-type modifiedConsumerStream struct {
-  c Consumer
-  f func(s Stream) Stream
-}
-
-func (mc *modifiedConsumerStream) Consume(s Stream) {
-  mc.c.Consume(mc.f(s))
-}
-*/
 
 func forValue(value reflect.Value) interface{} {
   return value.Addr().Interface()
