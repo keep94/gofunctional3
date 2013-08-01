@@ -13,13 +13,30 @@ import (
 
 var (
   consumerError = errors.New("consumer error.")
+  evenFilterer = NewFilterer(func(ptr interface{}) error {
+    p := ptr.(*int)
+    if *p % 2 == 0 {
+      return nil
+    }
+    return Skipped
+  })
+  oddFilterer = NewFilterer(func(ptr interface{}) error {
+    p := ptr.(*int)
+    if *p % 2 != 0 {
+      return nil
+    }
+    return Skipped
+  })
 )
 
 func TestCompositeConsumer(t *testing.T) {
-  ec := newEvenNumberConsumer()
-  oc := newOddNumberConsumer()
+  ec := &intConsumer{}
+  oc := &intConsumer{}
   consumer := CompositeConsumer(
-      new(int), nil, ec, oc)
+      new(int),
+      nil,
+      FilterConsumer(ec, evenFilterer),
+      FilterConsumer(oc, oddFilterer))
   doConsume(
       t,
       ModifyConsumer(consumer, func(s Stream) Stream { return Slice(s, 0, 5)}),
@@ -34,7 +51,7 @@ func TestCompositeConsumer(t *testing.T) {
 }
 
 func TestCompositeConsumerError(t *testing.T) {
-  ec := newEvenNumberConsumer()
+  ec := &intConsumer{}
   oc := ConsumerFunc(func(s Stream) error { return consumerError })
   consumer := CompositeConsumer(
       new(int),
@@ -88,9 +105,14 @@ func TestModifyConsumerStreamAutoCloseError(t *testing.T) {
 
 func TestConsumersNormal(t *testing.T) {
   s := Slice(Count(), 0, 5)
-  ec := newEvenNumberConsumer()
-  oc := newOddNumberConsumer()
-  errors := MultiConsume(s, new(int), nil, ec, oc)
+  ec := &intConsumer{}
+  oc := &intConsumer{}
+  errors := MultiConsume(
+      s,
+      new(int),
+      nil,
+      FilterConsumer(ec, evenFilterer),
+      FilterConsumer(oc, oddFilterer))
   if len(errors) != 2 || errors[0] != nil || errors[1] != nil {
     t.Error("Expected no errors.")
   }
@@ -104,16 +126,16 @@ func TestConsumersNormal(t *testing.T) {
 
 func TestConsumersEndEarly(t *testing.T) {
   s := Slice(Count(), 0, 5)
-  ec := newEvenNumberConsumer()
-  oc := newOddNumberConsumer()
+  ec := &intConsumer{}
+  oc := &intConsumer{}
   nc := &noNextConsumer{}
   errors := MultiConsume(
       s,
       new(int),
       nil,
       nc,
-      ec,
-      oc)
+      FilterConsumer(ec, evenFilterer),
+      FilterConsumer(oc, oddFilterer))
 
   if len(errors) != 3 || errors[0] != nil || errors[1] != nil || errors[2] != nil {
     t.Errorf("Expected no errors, got %v %v %v", errors[0], errors[1], errors[2])
@@ -146,13 +168,12 @@ func TestReadPastEndConsumer(t *testing.T) {
   }
 }
 
-type filterConsumer struct {
-  f Filterer
+type intConsumer struct {
   results []int
 }
 
-func (fc *filterConsumer) Consume(s Stream) (err error) {
-  fc.results, err = toIntArray(Filter(fc.f, s))
+func (ic *intConsumer) Consume(s Stream) (err error) {
+  ic.results, err = toIntArray(s)
   if err == Done {
     err = nil
   }
@@ -180,26 +201,6 @@ type noNextConsumer struct {
 func (nc *noNextConsumer) Consume(s Stream) (err error) {
   nc.completed = true
   return
-}
-
-func newEvenNumberConsumer() *filterConsumer {
-  return &filterConsumer{f: NewFilterer(func(ptr interface{}) error {
-    p := ptr.(*int)
-    if *p % 2 == 0 {
-      return nil
-    }
-    return Skipped
-  })}
-}
-
-func newOddNumberConsumer() *filterConsumer {
-  return &filterConsumer{f: NewFilterer(func(ptr interface{}) error {
-    p := ptr.(*int)
-    if *p % 2 == 1 {
-      return nil
-    }
-    return Skipped
-  })}
 }
 
 func doConsume(
