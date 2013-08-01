@@ -243,6 +243,49 @@ type abstractBuffer interface {
   Values() interface{}
 }
 
+type closeChecker struct {
+  functional.Stream
+  closed bool
+}
+
+func (c *closeChecker) Close() error {
+  c.closed = true
+  return c.Stream.Close()
+}
+
+type errorStream struct {
+  err error
+}
+
+func (e errorStream) Next(ptr interface{}) error {
+  return e.err
+}
+
+func (e errorStream) Close() error {
+  return nil
+}
+
+type consumerForTesting struct {
+  count int
+  e error
+}
+
+func (c *consumerForTesting) Consume(s functional.Stream) error {
+  var x int
+  for s.Next(&x) != functional.Done {
+    c.count++
+  }
+  return c.e
+}
+
+type closeErrorStream struct {
+  functional.Stream
+}
+
+func (c closeErrorStream) Close() error {
+  return closeError
+}
+
 func verifyFetched(t *testing.T, b abstractBuffer, start int, end int) {
   verifyValues(t, b.Values().([]int), start, end)
 }
@@ -301,49 +344,6 @@ func verifyClosed(t *testing.T, c *closeChecker, isClosed bool) {
   } else if !isClosed && c.closed {
     t.Error("Expected stream to be opened.")
   }
-}
-
-type closeChecker struct {
-  functional.Stream
-  closed bool
-}
-
-func (c *closeChecker) Close() error {
-  c.closed = true
-  return c.Stream.Close()
-}
-
-type errorStream struct {
-  err error
-}
-
-func (e errorStream) Next(ptr interface{}) error {
-  return e.err
-}
-
-func (e errorStream) Close() error {
-  return nil
-}
-
-type consumerForTesting struct {
-  count int
-  e error
-}
-
-func (c *consumerForTesting) Consume(s functional.Stream) error {
-  var x int
-  for s.Next(&x) != functional.Done {
-    c.count++
-  }
-  return c.e
-}
-
-type closeErrorStream struct {
-  functional.Stream
-}
-
-func (c closeErrorStream) Close() error {
-  return closeError
 }
 
 func newPtrBuffer(size int) *Buffer {
