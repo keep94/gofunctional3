@@ -243,16 +243,6 @@ type abstractBuffer interface {
   Values() interface{}
 }
 
-type closeChecker struct {
-  functional.Stream
-  closed bool
-}
-
-func (c *closeChecker) Close() error {
-  c.closed = true
-  return c.Stream.Close()
-}
-
 type errorStream struct {
   err error
 }
@@ -263,19 +253,6 @@ func (e errorStream) Next(ptr interface{}) error {
 
 func (e errorStream) Close() error {
   return nil
-}
-
-type consumerForTesting struct {
-  count int
-  e error
-}
-
-func (c *consumerForTesting) Consume(s functional.Stream) error {
-  var x int
-  for s.Next(&x) != functional.Done {
-    c.count++
-  }
-  return c.e
 }
 
 type closeErrorStream struct {
@@ -335,14 +312,6 @@ func verifyPtrValues(t *testing.T, values []*int, start int, end int) {
     if output := *values[i - start]; output != i {
       t.Errorf("Expected %v, got %v", i, output)
     }
-  }
-}
-
-func verifyClosed(t *testing.T, c *closeChecker, isClosed bool) {
-  if isClosed && !c.closed {
-    t.Error("Expected stream to be closed.")
-  } else if !isClosed && c.closed {
-    t.Error("Expected stream to be opened.")
   }
 }
 
