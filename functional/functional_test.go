@@ -512,10 +512,12 @@ func TestFlattenPropagateCloseError(t *testing.T) {
   if err != closeError {
     t.Errorf("Expected closeError, got %v", err)
   }
-  closeVerifyResult(t, stream, nil)
+  verifyCloseCalled(t, s, false)
   verifyCloseCalled(t, first, true)
-  verifyCloseCalled(t, second, true)
+  verifyCloseCalled(t, second, false)
+  closeVerifyResult(t, stream, nil)
   verifyCloseCalled(t, s, true)
+  verifyCloseCalled(t, second, true)
 }
 
 func TestFlattenCloseNormal(t *testing.T) {
@@ -533,10 +535,13 @@ func TestFlattenCloseNormal(t *testing.T) {
   // close stream early before reaching error
   slice := Slice(stream, 0, 2)
   toIntArray(slice)
+  verifyCloseCalled(t, s, false)
+  verifyCloseCalled(t, first, false)
   closeVerifyResult(t, slice, nil)
   verifyCloseCalled(t, s, true)
   verifyCloseCalled(t, first, true)
   // second stream not closed because it was never yielded
+  verifyCloseCalled(t, second, false)
 }
 
 func TestFlattenCloseError1(t *testing.T) {
@@ -553,9 +558,11 @@ func TestFlattenCloseError1(t *testing.T) {
 
   slice := Slice(stream, 0, 3)
   toIntArray(slice)
+  verifyCloseCalled(t, s, false)
+  verifyCloseCalled(t, first, true)
+  verifyCloseCalled(t, second, false)
   closeVerifyResult(t, slice, closeError)
   verifyCloseCalled(t, s, true)
-  verifyCloseCalled(t, first, true)
   verifyCloseCalled(t, second, true)
 }
 
@@ -573,9 +580,12 @@ func TestFlattenCloseError2(t *testing.T) {
 
   slice := Slice(stream, 0, 0)
   toIntArray(slice)
+  verifyCloseCalled(t, s, false)
   closeVerifyResult(t, slice, closeError)
   verifyCloseCalled(t, s, true)
   // first and second stream not closed because they were never yielded
+  verifyCloseCalled(t, first, false)
+  verifyCloseCalled(t, second, false)
 }
 
 func TestTakeWhileNone(t *testing.T) {
