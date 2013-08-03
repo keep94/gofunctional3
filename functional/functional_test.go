@@ -268,17 +268,6 @@ func TestReadRowsError(t *testing.T) {
   }
 }
 
-func TestReadRowsClose(t *testing.T) {
-  rows := &rowsCloseChecker{&fakeRows{}, &simpleCloseChecker{closeError: closeError}}
-  s := ReadRows(rows)
-  closeVerifyResult(t, s, closeError)
-}
-
-func TestReadRowsManualCloseNoImplCloser(t *testing.T) {
-  s := ReadRows(&fakeRows{})
-  closeVerifyResult(t, s, nil)
-}
-  
 func TestReadLines(t *testing.T) {
   reader := strings.NewReader("Now is\nthe time\nfor all good men.\n")
   stream := ReadLines(reader)
@@ -322,13 +311,8 @@ func TestReadLinesLongLine2(t *testing.T) {
 
 func TestReadLinesManualClose(t *testing.T) {
   reader := &readerCloseChecker{strings.NewReader(""), &simpleCloseChecker{closeError: closeError}}
-  s := ReadLines(reader)
+  s := ReadLinesAndClose(reader)
   closeVerifyResult(t, s, closeError)
-}
-
-func TestReadLinesManualCloseNoImplCloser(t *testing.T) {
-  s := ReadLines(strings.NewReader(""))
-  closeVerifyResult(t, s, nil)
 }
 
 func TestNilStream(t *testing.T) {
@@ -958,30 +942,6 @@ func TestNoCloseStream(t *testing.T) {
   }
 }
 
-/*
-func TestNoCloseRows(t *testing.T) {
-  rows := &rowsCloseChecker{
-      &fakeRows{ids: []int {}, names: []string{}},
-      &simpleCloseChecker{}}
-  stream := ReadRows(NoCloseRows(rows))
-  toIntAndStringArray(stream)
-  if rows.closeCalled() {
-    t.Error("Expected rows not to be closed.")
-  }
-}
-
-func TestNoCloseReader(t *testing.T) {
-  reader := &readerCloseChecker{
-      strings.NewReader(""),
-      &simpleCloseChecker{}}
-  stream := ReadLines(NoCloseReader(reader))
-  toStringArray(stream)
-  if reader.closeCalled() {
-    t.Error("Did not expect close to be called on reader.")
-  }
-}
-*/
-
 func verifyDupClose(t *testing.T, c io.Closer) {
   closeVerifyResult(t, c, nil)
   closeVerifyResult(t, c, nil)
@@ -1091,11 +1051,6 @@ func (s *streamCloseChecker) Close() error {
     return streamResult
   }
   return checkerResult
-}
-
-type rowsCloseChecker struct {
-  Rows
-  closeChecker
 }
 
 type readerCloseChecker struct {

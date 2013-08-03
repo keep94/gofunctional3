@@ -178,19 +178,23 @@ func Slice(s Stream, start int, end int) Stream {
 }
 
 // ReadRows returns the rows in a database table as a Stream of Tuple.
-// Calling Close on returned stream closes r if r implements io.Closer.
+// Calling Close on returned stream does nothing.
 func ReadRows(r Rows) Stream {
-  c, _ := r.(io.Closer)
-  return &rowStream{rows: r, maybeCloser: maybeCloser{c: c}}
+  return &rowStream{rows: r}
 }
 
 // ReadLines returns the lines of text in r separated by either "\n" or "\r\n"
 // as a Stream of string. The emitted string types do not contain the
 // end of line characters.
-// Calling Close on returned Stream closes r if r implements io.Closer.
+// Calling Close on returned Stream does nothing.
 func ReadLines(r io.Reader) Stream {
-  c, _ := r.(io.Closer)
-  return &lineStream{bufio: bufio.NewReader(r), maybeCloser: maybeCloser{c: c}}
+  return &lineStream{bufio: bufio.NewReader(r)}
+}
+
+// ReadLinesAndClose works just like ReadLines except that calling Close on
+// returned Stream closes r.
+func ReadLinesAndClose(r io.ReadCloser) Stream {
+  return &closeStream{Stream: ReadLines(r), Closer: r}
 }
 
 func NewStreamFromStreamFunc(f func() Stream) Stream {
@@ -464,8 +468,8 @@ func (s *sliceStream) Next(ptr interface{}) error {
 
 type rowStream struct {
   rows Rows
-  maybeCloser
   done bool
+  closeDoesNothing
 }
 
 func (s *rowStream) Next(ptr interface{}) error {
@@ -482,8 +486,8 @@ func (s *rowStream) Next(ptr interface{}) error {
 
 type lineStream struct {
   bufio *bufio.Reader
-  maybeCloser
   done bool
+  closeDoesNothing
 }
 
 func (s *lineStream) Next(ptr interface{}) error {
@@ -764,15 +768,13 @@ func (s noCloseStream) Close() error {
   return nil
 }
 
-type maybeCloser struct {
-  c io.Closer
+type closeStream struct {
+  Stream
+  io.Closer
 }
 
-func (mc *maybeCloser) Close() error {
-  if mc.c != nil {
-    return mc.c.Close()
-  }
-  return nil
+func (s *closeStream) Close() error {
+  return s.Closer.Close()
 }
 
 func orList(f Filterer) []Filterer {
