@@ -197,6 +197,8 @@ func ReadLinesAndClose(r io.ReadCloser) Stream {
   return &closeStream{Stream: ReadLines(r), Closer: r}
 }
 
+// NewStreamFromStreamFunc creates a Stream of Streams by repeatedly calling
+// f. Calling Close on returned Stream is a no-op.
 func NewStreamFromStreamFunc(f func() Stream) Stream {
   return streamFromStreamFunc{f: f}
 }
@@ -341,9 +343,8 @@ func FastCompose(f Mapper, g Mapper, ptr interface{}) Mapper {
 }
 
 // NoCloseStream returns a Stream just like s but with a Close method that does
-// nothing. The returnes Stream will still automatically close itself when the
-// end of stream is reached. This function is useful for preventing a stream from
-// automatically closing its underlying stream.
+// nothing. This function is useful for preventing a stream from
+// closing its underlying stream.
 func NoCloseStream(s Stream) Stream {
   return noCloseStream{s}
 }
