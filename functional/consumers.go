@@ -104,7 +104,7 @@ func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consume
     err = s.Next(ptr)
     for i := range streams {
       if !streams[i].isClosed() {
-        p := streams[i].EmitPtr()
+        p, _ := streams[i].EmitPtr()
         copier(ptr, p)
       }
     }

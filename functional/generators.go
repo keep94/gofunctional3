@@ -5,48 +5,40 @@
 
 package functional
 
-import (
-  "errors"
-)
-
 // Emitter allows a function to emit values to an associated Stream.
 type Emitter interface {
 
   // EmitPtr returns the pointer supplied to Next of associated Stream.
-  // If associated Stream has been closed, EmitPtr returns nil.
-  EmitPtr() interface{}
+  // If Close is called on associated Stream, EmitPtr returns nil and false.
+  EmitPtr() (ptr interface{}, streamOpened bool)
 
   // Return causes Next of associated Stream to return. Return yields control
   // to the caller of Next blocking until Next on associated Stream is called
   // again or Stream is closed. err is the value that Next should return.
-  // err != functional.Done otherwise Return panics.
   Return(err error)
+
+  // An Emitting function calls Finalize when it is done emitting values.
+  // but before it does any final cleanup. Finalize blocks until Close is
+  // called on associated Stream.
+  Finalize()
 }
 
 // NewGenerator creates a Stream that emits the values from emitting
-// function f. When f is through emitting values, it should just return. If
-// f gets nil when calling EmitPtr on e it should return immediately as this
-// means the Stream was closed.
-func NewGenerator(f func(e Emitter)) Stream {
-  return NewGeneratorCloseMayFail(func(e Emitter) error {
-    f(e)
-    return nil
-  })
-}
-
-// NewGeneratorCloseMayFail creates a Stream that emits the values from
-// emitting function f. When f is through emitting values, it should perform
-// any necessary cleanup and return any error from the cleanup.
-// If f gets nil when calling EmitPtr on e it should immediately perform
-// cleanup returning any error from the cleanup as this means the Stream
-// was closed. The Close() method on returned Stream reports any non-nil error
-// f returns to the caller.
-// This function is draft API and may change in incompatible ways.
-func NewGeneratorCloseMayFail(f func(e Emitter) error) Stream {
-  result := &regularGenerator{emitterStream: emitterStream{ptrCh: make(chan interface{}), errCh: make(chan error)}}
+// function f. First, f emits values by calling EmitPtr and Return on the
+// Emitter passed to it. When When f is through emitting values or when EmitPtr
+// returns false for streamOpened, f calls Finalize() on its Emitter,
+// performs any necessary cleanup and finally returns the error that
+// Close() on the associated Stream will return. Its very important that f
+// calls Finalize() before performing cleanup to ensure that the cleanup is
+// done after Close() is called on the associated Stream. Caller must call
+// Close() on returned Stream or else the goroutine operating the Stream will
+// never exit.
+func NewGenerator(f func(e Emitter) error) Stream {
+  result := regularGenerator{&emitterStream{ptrCh: make(chan interface{}), errCh: make(chan error)}}
   go func() {
     var err error
     defer func() {
+      result.Finalize()
       result.endEmitter(err)
     }()
     result.startEmitter()
@@ -55,55 +47,41 @@ func NewGeneratorCloseMayFail(f func(e Emitter) error) Stream {
   return result
 }
 
-// EmitAll emits all of Stream s to Emitter e. On success, returns nil.
-// If the Stream for e becomes closed, EmitAll closes s and returns Done.
-// If there was an error closing s, it returns that error.
-func EmitAll(s Stream, e Emitter) error {
-  for ptr := e.EmitPtr(); ptr != nil; ptr = e.EmitPtr() {
-    err := s.Next(ptr)
-    if err == Done {
-      return nil
-    }
-    e.Return(err)
+// EmitAll emits all of Stream s to Emitter e.
+// If the Stream for e becomes closed, EmitAll returns false.
+// Otherwise EmitAll returns true.
+func EmitAll(s Stream, e Emitter) (opened bool) {
+  var ptr interface{}
+  if ptr, opened = e.EmitPtr(); !opened {
+    return
   }
-  return finish(s.Close())
+  for err := s.Next(ptr); err != Done; err = s.Next(ptr) {
+    e.Return(err)
+    if ptr, opened = e.EmitPtr(); !opened {
+      return
+    }
+  }
+  return
 }
 
 type regularGenerator struct {
-  emitterStream
-  closeResult error
+  *emitterStream
 }
 
-func (s *regularGenerator) Return(err error) {
-  if err == Done {
-    panic("Can't pass functional.Done to Return of Emitter")
+func (e regularGenerator) Finalize() {
+  for _, opened := e.EmitPtr(); opened; _, opened = e.EmitPtr() {
+    e.Return(Done)
   }
-  s.emitterStream.Return(err)
 }
 
-func (s *regularGenerator) Next(ptr interface{}) error {
-  if s.isClosed() {
-    return Done
+func (s regularGenerator) Return(err error) {
+  if (s.ptr != nil) {
+    s.emitterStream.Return(err)
   }
-  result := s.emitterStream.Next(ptr)
-  if result == Done {
-    s.closeResult = <-s.errCh
-    s.close()
-    return finish(s.closeResult)
-  }
-  return result
 }
 
-func (s *regularGenerator) Close() error {
-  if s.isClosed() {
-    return s.closeResult
-  }
+func (s regularGenerator) Close() error {
   result := s.Next(nil)
-  if !s.isClosed() {
-    return errors.New("Emitting function did not return on Close.")
-  }
-  if result == Done {
-    return nil
-  }
+  s.close()
   return result
 }

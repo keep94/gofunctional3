@@ -21,8 +21,8 @@ func (s *emitterStream) Return(err error) {
   s.ptr = <-s.ptrCh
 }
 
-func (s *emitterStream) EmitPtr() interface{} {
-  return s.ptr
+func (s *emitterStream) EmitPtr() (interface{}, bool) {
+  return s.ptr, s.ptr != nil
 }
 
 func (s *emitterStream) startEmitter() {
@@ -30,7 +30,6 @@ func (s *emitterStream) startEmitter() {
 }
 
 func (s *emitterStream) endEmitter(e error) {
-  s.errCh <- Done
   s.errCh <- e
 }
 
