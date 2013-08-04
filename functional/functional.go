@@ -442,19 +442,11 @@ type sliceStream struct {
   start int
   end int
   index int
-  done bool
 }
 
 func (s *sliceStream) Next(ptr interface{}) error {
-  if s.done {
-    return Done
-  }
   for s.end < 0 || s.index < s.end {
     err := s.Stream.Next(ptr)
-    if err == Done {
-      s.done = true
-      return Done
-    }
     if err != nil {
       return err
     }
@@ -463,7 +455,6 @@ func (s *sliceStream) Next(ptr interface{}) error {
       return nil
     }
   }
-  s.done = true
   return Done
 }
 
