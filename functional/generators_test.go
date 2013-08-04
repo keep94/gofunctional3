@@ -11,20 +11,22 @@ import (
 )
 
 func TestNewInfiniteGenerator(t *testing.T) {
-
-  var finished bool
   // fibonacci
   fib := NewGenerator(
-      func(e Emitter) {
+      func(e Emitter) error {
         a := 0
         b := 1
-        for ptr := e.EmitPtr(); ptr != nil; ptr = e.EmitPtr() {
-          p := ptr.(*int)
-          *p = a
+        for {
+          var ptr interface{}
+          var opened bool
+          if ptr, opened = e.EmitPtr(); !opened {
+            return nil
+          }
+          *ptr.(*int) = a
           e.Return(nil)
           a, b = b, a + b
         }
-        finished = true
+        return nil
       })
   var results []int
   stream := Slice(fib, 0, 7)
@@ -32,93 +34,95 @@ func TestNewInfiniteGenerator(t *testing.T) {
   if output := fmt.Sprintf("%v", results); output != "[0 1 1 2 3 5 8]"  {
     t.Errorf("Expected [0 1 1 2 3 5 8] got %v", output)
   }
-  if !finished {
-    t.Error("Generating function should complete on close.")
-  }
   verifyDone(t, stream, new(int), err)
+  closeVerifyResult(t, stream, nil)
 }
 
 func TestNewFiniteGenerator(t *testing.T) {
-  var finished bool
   stream := NewGenerator(
-      func(e Emitter) {
+      func(e Emitter) error {
         values := []int{1, 2, 5}
         for i := range values {
-          ptr := e.EmitPtr()
-          if ptr == nil {
-            break
+          var ptr interface{}
+          var opened bool
+          if ptr, opened = e.EmitPtr(); !opened {
+            return nil
           }
           *ptr.(*int) = values[i]
           e.Return(nil)
         }
-        finished = true
+        return nil
       })
   results, err := toIntArray(stream)
   if output := fmt.Sprintf("%v", results); output != "[1 2 5]" {
     t.Errorf("Expected [1 2 5] got %v", output)
   }
-  if !finished {
-    t.Error("Generating function should have completed.")
-  }
   verifyDone(t, stream, new(int), err)
+  closeVerifyResult(t, stream, nil)
 }
 
 func TestEmptyGenerator(t *testing.T) {
-  var finished bool
-  stream := NewGenerator(func (e Emitter) { finished = true })
+  stream := NewGenerator(func (e Emitter) error { return nil })
   results, err := toIntArray(stream)
   if output := fmt.Sprintf("%v", results); output != "[]" {
     t.Errorf("Expected [] got %v", output)
   }
-  if !finished {
-    t.Error("Generating function should have completed.")
+  verifyDone(t, stream, new(int), err)
+  closeVerifyResult(t, stream, nil)
+}
+
+func TestGeneratorUsingStreams(t *testing.T) {
+  s1 := Slice(Count(), 0, 3)
+  s2 := Slice(Count(), 10, 12)
+  var openedAfterS1, openedAfterS2 bool
+  stream := newConcatGenerator(s1, s2, &openedAfterS1, &openedAfterS2)
+  results, err := toIntArray(stream)
+  if output := fmt.Sprintf("%v", results); output != "[0 1 2 10 11]" {
+    t.Errorf("Expected [0 1 2 10 11] got %v", output)
   }
   verifyDone(t, stream, new(int), err)
+  closeVerifyResult(t, stream, nil)
+  assertBoolEqual(t, true, openedAfterS1)
+  assertBoolEqual(t, true, openedAfterS2)
 }
 
-func TestCloseMayFailClose(t *testing.T) {
-  stream := NewGeneratorCloseMayFail(closeFailEmitterFunc)
-  closeVerifyResult(t, stream, closeError)
-  closeVerifyResult(t, stream, closeError)
-}
-
-func TestCloseMayFailNext(t *testing.T) {
-  stream := NewGeneratorCloseMayFail(closeFailEmitterFunc)
-  var x int
-  if err := stream.Next(&x); err != closeError {
-    t.Errorf("Expected closeError, got %v", err)
+func TestGeneratorUsingStreamClose(t *testing.T) {
+  s1 := &streamCloseChecker{Slice(Count(), 0, 3), &simpleCloseChecker{}}
+  s2 := &streamCloseChecker{Slice(Count(), 10, 12), &simpleCloseChecker{closeError: closeError}}
+  var openedAfterS1, openedAfterS2 bool
+  stream := Slice(
+      newConcatGenerator(s1, s2, &openedAfterS1, &openedAfterS2), 0, 2)
+  results, err := toIntArray(stream)
+  if output := fmt.Sprintf("%v", results); output != "[0 1]" {
+    t.Errorf("Expected [0 1] got %v", output)
   }
+  verifyDone(t, stream, new(int), err)
+  verifyCloseCalled(t, s1, false)
+  verifyCloseCalled(t, s2, false)
   closeVerifyResult(t, stream, closeError)
+  verifyCloseCalled(t, s1, true)
+  verifyCloseCalled(t, s2, true)
+  assertBoolEqual(t, false, openedAfterS1)
+  assertBoolEqual(t, false, openedAfterS2)
 }
 
-func TestEmitAllClosed(t *testing.T) {
-  s := Count()
-  e := fakeEmitter{nil}
-  if output := EmitAll(s, e); output != Done {
-    t.Errorf("Expected Done, got %v", output)
+func newConcatGenerator(
+    s1, s2 Stream, openedAfterS1, openedAfterS2 *bool) Stream {
+  return NewGenerator(func(e Emitter) error {
+    *openedAfterS1 = EmitAll(s1, e)
+    *openedAfterS2 = EmitAll(s2, e)
+    e.Finalize()
+    err1 := s1.Close()
+    err2 := s2.Close()
+    if err1 == nil {
+      return err2
+    }
+    return err1
+  })
+}
+
+func assertBoolEqual(t *testing.T, expected, actual bool) {
+  if expected != actual {
+    t.Errorf("Expected %v, got %v", expected, actual)
   }
 }
-
-func TestEmitAllSuccess(t *testing.T) {
-  s := xrange(0, 10)
-  e := fakeEmitter{new(int)}
-  if output := EmitAll(s, e); output != nil {
-    t.Errorf("Expected nil, got %v", output)
-  }
-}
-
-func closeFailEmitterFunc(e Emitter) error {
-  return closeError
-}
-
-type fakeEmitter struct {
-  ptr interface{}
-}
-
-func (e fakeEmitter) EmitPtr() interface{} {
-  return e.ptr
-}
-
-func (e fakeEmitter) Return(err error) {
-}
-
