@@ -23,7 +23,7 @@ Online documentation is available [here](http://go.pkgdoc.org/github.com/keep94/
 
 ## Release notes and what changed from gofunctional2
 
-Click [here](https://sites.google.com/sites/gofunctional3) to see the release
+Click [here](https://sites.google.com/site/gofunctional3) to see the release
 notes and what changed since gofunctional2.
 
 ## Real World Example
