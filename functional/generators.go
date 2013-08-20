@@ -60,6 +60,7 @@ func EmitAll(s Stream, e Emitter) (opened bool) {
   return
 }
 
+// Use WaitForClose in emitting functions (See description for NewGenerator).
 // WaitForClose yields execution to the caller until caller calls Close on
 // associated Stream while returning Done each time caller calls Next.
 // An emitting function calls WaitForClose when it is done emitting values.
