@@ -39,12 +39,9 @@ func emitByYear(s functional.Stream, e functional.Emitter) {
   // Note that we stay in this loop until either we get a first date or
   // caller calls Close()
   for err = s.Next(&incoming); err != nil; err = s.Next(&incoming) {
-    // Propagate error and yield execution to caller.
-    e.Return(err)
-
-    // After each call to Return, we must get the pointer caller supplied to
-    // Next.
-    if ptr, opened = e.EmitPtr(); !opened {
+    // Propagate error and yield execution to caller. Then get the next
+    // pointer caller pases to Next().
+    if ptr, opened = e.Return(err); !opened {
       return
     }
   }
@@ -58,8 +55,7 @@ func emitByYear(s functional.Stream, e functional.Emitter) {
 
     // Propagate any errors to caller.
     if err != nil {
-      e.Return(err)
-      if ptr, opened = e.EmitPtr(); !opened {
+      if ptr, opened = e.Return(err); !opened {
         return
       }
       continue
@@ -71,8 +67,7 @@ func emitByYear(s functional.Stream, e functional.Emitter) {
     // that year.
     if year != currentYear {
       *ptr.(*YearCount) = YearCount{Year: currentYear, Count: sum}
-      e.Return(nil)
-      if ptr, opened = e.EmitPtr(); !opened {
+      if ptr, opened = e.Return(nil); !opened {
         return
       }
       sum = incoming.Count
@@ -85,8 +80,8 @@ func emitByYear(s functional.Stream, e functional.Emitter) {
   *ptr.(*YearCount) = YearCount{Year: currentYear, Count: sum}
 
   // Note that we return nil, not functional.Done, since we are emitting the
-  // count for the final year. The call to Finalize() in ByYear() takes care
-  // of returning functional.Done to the caller.
+  // count for the final year. The call to WaitForClose() in ByYear() takes
+  // care of returning functional.Done to the caller.
   e.Return(nil)
 }
 
@@ -101,7 +96,7 @@ func ByYear(s functional.Stream) functional.Stream {
 
     // Wait until caller calls Close() while returning functional.Done each time
     // caller calls Next().
-    e.Finalize()
+    functional.WaitForClose(e)
 
     // Do clean up that is visible to caller
     return s.Close()

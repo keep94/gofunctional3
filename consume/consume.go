@@ -97,7 +97,7 @@ func NewPtrGrowingBuffer(
     }
   } else {
     c = func() reflect.Value {
-      return reflect.ValueOf(creater());
+      return reflect.ValueOf(creater())
     }
   }
   result := &GrowingBuffer{
@@ -155,7 +155,7 @@ func (g *GrowingBuffer) ensureCapacity(
     }
     return result
   }
-  return aSlice;
+  return aSlice
 }
 
 func (g *GrowingBuffer) makeSlice(length int) reflect.Value {

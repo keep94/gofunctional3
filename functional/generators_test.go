@@ -12,27 +12,37 @@ import (
 
 func TestNewInfiniteGenerator(t *testing.T) {
   // fibonacci
-  fib := NewGenerator(
-      func(e Emitter) error {
+  fibFunc := func(e Emitter) error {
+        var ptr interface{}
+        var opened bool
+        if ptr, opened = e.EmitPtr(); !opened {
+          return nil
+        }
         a := 0
         b := 1
         for {
-          var ptr interface{}
-          var opened bool
-          if ptr, opened = e.EmitPtr(); !opened {
+          *ptr.(*int) = a
+          if ptr, opened = e.Return(nil); !opened {
             return nil
           }
-          *ptr.(*int) = a
-          e.Return(nil)
           a, b = b, a + b
         }
         return nil
-      })
+      }
   var results []int
-  stream := Slice(fib, 0, 7)
+  stream := Slice(NewGenerator(fibFunc), 0, 7)
   results, err := toIntArray(stream)
   if output := fmt.Sprintf("%v", results); output != "[0 1 1 2 3 5 8]"  {
     t.Errorf("Expected [0 1 1 2 3 5 8] got %v", output)
+  }
+  verifyDone(t, stream, new(int), err)
+  closeVerifyResult(t, stream, nil)
+
+  results = nil
+  stream = Slice(NewGenerator(fibFunc), 0, 0)
+  results, err = toIntArray(stream)
+  if output := fmt.Sprintf("%v", results); output != "[]"  {
+    t.Errorf("Expected [] got %v", output)
   }
   verifyDone(t, stream, new(int), err)
   closeVerifyResult(t, stream, nil)
@@ -41,15 +51,17 @@ func TestNewInfiniteGenerator(t *testing.T) {
 func TestNewFiniteGenerator(t *testing.T) {
   stream := NewGenerator(
       func(e Emitter) error {
+        var ptr interface{}
+        var opened bool
+        if ptr, opened = e.EmitPtr(); !opened {
+          return nil
+        }
         values := []int{1, 2, 5}
         for i := range values {
-          var ptr interface{}
-          var opened bool
-          if ptr, opened = e.EmitPtr(); !opened {
+          *ptr.(*int) = values[i]
+          if ptr, opened = e.Return(nil); !opened {
             return nil
           }
-          *ptr.(*int) = values[i]
-          e.Return(nil)
         }
         return nil
       })
@@ -111,7 +123,7 @@ func newConcatGenerator(
   return NewGenerator(func(e Emitter) error {
     *openedAfterS1 = EmitAll(s1, e)
     *openedAfterS2 = EmitAll(s2, e)
-    e.Finalize()
+    WaitForClose(e)
     err1 := s1.Close()
     err2 := s2.Close()
     if err1 == nil {

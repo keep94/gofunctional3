@@ -12,33 +12,30 @@ type Emitter interface {
   // If Close is called on associated Stream, EmitPtr returns nil and false.
   EmitPtr() (ptr interface{}, streamOpened bool)
 
-  // Return causes Next of associated Stream to return. Return yields control
-  // to the caller of Next blocking until Next on associated Stream is called
-  // again or Stream is closed. err is the value that Next should return.
-  Return(err error)
-
-  // An Emitting function calls Finalize when it is done emitting values.
-  // but before it does any final cleanup. Finalize blocks until Close is
-  // called on associated Stream.
-  Finalize()
+  // Return causes Next of associated Stream to return err. Return yields
+  // execution to the caller of Next blocking until it calls Next again or
+  // Close. Finally, Return returns the pointer passed to Next or nil and
+  // false if caller called Close.
+  Return(err error) (ptr interface{}, streamOpened bool)
 }
 
 // NewGenerator creates a Stream that emits the values from emitting
 // function f. First, f emits values by calling EmitPtr and Return on the
 // Emitter passed to it. When When f is through emitting values or when EmitPtr
-// returns false for streamOpened, f calls Finalize() on its Emitter,
+// or Return returns false for streamOpened, f calls WaitForClose(),
 // performs any necessary cleanup and finally returns the error that
 // Close() on the associated Stream will return. Its very important that f
-// calls Finalize() before performing cleanup to ensure that the cleanup is
+// calls WaitForClose() before performing cleanup to ensure that the cleanup is
 // done after Close() is called on the associated Stream. Caller must call
 // Close() on returned Stream or else the goroutine operating the Stream will
-// never exit.
+// never exit. Note that execution of f begins the first time the caller calls
+// Next() or Close() on associated Stream.
 func NewGenerator(f func(e Emitter) error) Stream {
   result := regularGenerator{&emitterStream{ptrCh: make(chan interface{}), errCh: make(chan error)}}
   go func() {
     var err error
     defer func() {
-      result.Finalize()
+      WaitForClose(result)
       result.endEmitter(err)
     }()
     result.startEmitter()
@@ -56,28 +53,31 @@ func EmitAll(s Stream, e Emitter) (opened bool) {
     return
   }
   for err := s.Next(ptr); err != Done; err = s.Next(ptr) {
-    e.Return(err)
-    if ptr, opened = e.EmitPtr(); !opened {
+    if ptr, opened = e.Return(err); !opened {
       return
     }
   }
   return
 }
 
+// WaitForClose yields execution to the caller until caller calls Close on
+// associated Stream while returning Done each time caller calls Next.
+// An emitting function calls WaitForClose when it is done emitting values.
+// but before it does any final cleanup.
+func WaitForClose(e Emitter) {
+  for _, opened := e.EmitPtr(); opened; _, opened = e.Return(Done) {
+  }
+}
+
 type regularGenerator struct {
   *emitterStream
 }
 
-func (e regularGenerator) Finalize() {
-  for _, opened := e.EmitPtr(); opened; _, opened = e.EmitPtr() {
-    e.Return(Done)
-  }
-}
-
-func (s regularGenerator) Return(err error) {
+func (s regularGenerator) Return(err error) (interface{}, bool) {
   if (s.ptr != nil) {
     s.emitterStream.Return(err)
   }
+  return s.EmitPtr()
 }
 
 func (s regularGenerator) Close() error {
