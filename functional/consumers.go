@@ -92,19 +92,19 @@ func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consume
   streams := make([]splitStream, len(consumers))
   closeErrors = make([]error, len(consumers))
   for i := range streams {
-    streams[i] = splitStream{emitterStream{ptrCh: make(chan interface{}), errCh: make(chan error)}}
-    go func(s *splitStream, c Consumer, e *error) {
+    streams[i] = splitStream{&emitterStream{ptrCh: make(chan interface{}), errCh: make(chan error)}}
+    go func(s splitStream, c Consumer, e *error) {
       defer s.endStream()
       s.startStream()
       *e = c.Consume(s)
-    }(&streams[i], consumers[i], &closeErrors[i])
+    }(streams[i], consumers[i], &closeErrors[i])
   }
   var err error
   for asyncReturn(streams, err) {
     err = s.Next(ptr)
     for i := range streams {
       if !streams[i].isClosed() {
-        p, _ := streams[i].EmitPtr()
+        p := streams[i].ptr
         copier(ptr, p)
       }
     }
@@ -113,17 +113,17 @@ func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consume
 }
 
 type splitStream struct {
-  emitterStream
+  *emitterStream
 }
 
-func (s *splitStream) Next(ptr interface{}) error {
+func (s splitStream) Next(ptr interface{}) error {
   if ptr == nil {
     panic("Got nil pointer in Next.")
   }
   return s.emitterStream.Next(ptr)
 }
 
-func (s *splitStream) Close() error {
+func (s splitStream) Close() error {
   return nil
 }
 

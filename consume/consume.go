@@ -50,7 +50,6 @@ func (b *Buffer) Consume(s functional.Stream) (err error) {
 
 // GrowingBuffer reads values from a Stream of T until the stream is exausted.
 // GrowingBuffer grows as needed to hold all the read values.
-// GrowingBuffer is provisional, draft API and may change in future releases.
 type GrowingBuffer struct {
   buffer reflect.Value
   sliceType reflect.Type

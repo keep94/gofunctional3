@@ -21,10 +21,6 @@ func (s *emitterStream) Return(err error) {
   s.ptr = <-s.ptrCh
 }
 
-func (s *emitterStream) EmitPtr() (interface{}, bool) {
-  return s.ptr, s.ptr != nil
-}
-
 func (s *emitterStream) startEmitter() {
   s.ptr = <-s.ptrCh
 }

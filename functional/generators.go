@@ -74,6 +74,10 @@ type regularGenerator struct {
   *emitterStream
 }
 
+func (s regularGenerator) EmitPtr() (interface{}, bool) {
+  return s.ptr, s.ptr != nil
+}
+
 func (s regularGenerator) Return(err error) (interface{}, bool) {
   if (s.ptr != nil) {
     s.emitterStream.Return(err)
