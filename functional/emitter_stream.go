@@ -11,7 +11,7 @@ type emitterStream struct {
   ptr interface{}
 }
 
-func (s *emitterStream) Next(ptr interface{}) error {
+func (s *emitterStream) next(ptr interface{}) error {
   s.ptrCh <- ptr
   return <-s.errCh
 }

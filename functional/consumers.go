@@ -120,7 +120,7 @@ func (s splitStream) Next(ptr interface{}) error {
   if ptr == nil {
     panic("Got nil pointer in Next.")
   }
-  return s.emitterStream.Next(ptr)
+  return s.emitterStream.next(ptr)
 }
 
 func (s splitStream) Close() error {
