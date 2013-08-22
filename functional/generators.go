@@ -87,7 +87,7 @@ func (s regularGenerator) Return(err error) (interface{}, bool) {
 
 func (s regularGenerator) Next(ptr interface{}) error {
   if ptr == nil {
-    panic("nil passed to Next() of generator.")
+    panic("Got nil pointer in Next.")
   }
   return s.emitterStream.next(ptr)
 }
