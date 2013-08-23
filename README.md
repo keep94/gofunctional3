@@ -5,7 +5,8 @@ a python iterator or generator. The methods found in here are similar to
 the methods found in the python itertools module. This is version 3 of
 gofunctional.
 
-This API is in draft mode and should be treated as such. This API may change in incompatible ways in future versions.
+This API is now stable and will not change in incompatible ways. New functions
+added may be marked as provisional, draft API.
 
 ## Using
 
