@@ -8,6 +8,7 @@ package functional
 
 import (
   "bufio"
+  "container/heap"
   "errors"
   "io"
   "reflect"
@@ -100,9 +101,8 @@ func (c CompositeMapper) pieces() []compositeMapperPiece {
 // Creater of T creates a new, pre-initialized, T and returns a pointer to it.
 type Creater func() interface {}
 
-// Copier of T copies the value at src to the value at dest. This type is
-// often needed when values of type T need to be pre-initialized. src and
-// dest are of type *T and both point to pre-initialized T.
+// Copier of T copies the value at src to the value at dest.
+// src and dest are of type *T and both point to pre-initialized T.
 type Copier func(src, dest interface{})
 
 // Rows represents rows in a database table. Most database API already have
@@ -211,6 +211,39 @@ func Deferred(f func() Stream) Stream {
 // Cycle(f) is equivalent to Flatten(NewStreamFromStreamFunc(f))
 func Cycle(f func() Stream) Stream {
   return Flatten(NewStreamFromStreamFunc(f))
+}
+
+// Merge merges multiple streams that emit their elments in order into a
+// single stream that emits all the elements in order.
+// Calling Close on returned Stream closes all underlying streams.
+// If caller passes a slice to Merge, no copy is made of it.
+// Each Stream in streams must emit elements in order according
+// to before, and the resulting Stream emits all elements in order according
+// to before. before returns true if the T element at lhs comes before the T
+// element at rhs. lhs and rhs are *T.
+// Merge is draft API, it may change in incompatible ways.
+func Merge(
+    creater Creater,
+    copier Copier, 
+    before func(lhs, rhs interface{}) bool,
+    streams ...Stream) Stream {
+  if len(streams) == 0 {
+    return NilStream()
+  }
+  if len(streams) == 1 {
+    return streams[0]
+  }
+  if copier == nil {
+    copier = assignCopier
+  }
+  h := &streamHeapWithLess{
+      streamHeap: make(streamHeap, len(streams)), before: before}
+  for i := range streams {
+    h.streamHeap[i] = &item{stream: streams[i], current: creater()}
+    h.streamHeap[i].pop()
+  }
+  heap.Init(h)
+  return &mergeStream{orig: streams, sh: h, copier: copier}
 }
 
 // Concat concatenates multiple Streams into one.
@@ -650,6 +683,85 @@ func (s *dropStream) Next(ptr interface{}) error {
     }
   }
   return err
+}
+
+type item struct {
+  stream Stream
+  current interface{}
+  e error
+}
+
+func (i *item) pop() {
+  i.e = i.stream.Next(i.current)
+}
+
+type streamHeap []*item
+
+func (sh streamHeap) Len() int {
+  return len(sh)
+}
+
+func (sh streamHeap) Swap(i, j int) {
+  sh[i], sh[j] = sh[j], sh[i]
+}
+
+func (sh *streamHeap) Push(x interface{}) {
+  *sh = append(*sh, x.(*item))
+}
+
+func (sh *streamHeap) Pop() interface{} {
+  old := *sh
+  n := len(old)
+  *sh = old[0:n - 1]
+  return old[n - 1]
+}
+
+type streamHeapWithLess struct {
+  streamHeap
+  before func(lhs, rhs interface{}) bool
+}
+
+func (sh *streamHeapWithLess) Less(i, j int) bool {
+  if sh.streamHeap[i].e != nil {
+    return sh.streamHeap[j].e == nil
+  }
+  if sh.streamHeap[j].e != nil {
+    return false
+  }
+  return sh.before(sh.streamHeap[i].current, sh.streamHeap[j].current)
+}
+
+type mergeStream struct {
+  orig []Stream
+  sh *streamHeapWithLess
+  copier Copier
+}
+
+func (s *mergeStream) Next(ptr interface{}) error {
+  for s.sh.Len() > 0 {
+    aitem := heap.Pop(s.sh).(*item)
+    if aitem.e == Done {
+      continue
+    }
+    if aitem.e != nil {
+      return aitem.e
+    }
+    s.copier(aitem.current, ptr)
+    aitem.pop()
+    heap.Push(s.sh, aitem)
+    return nil
+  }
+  return Done
+}
+      
+func (s *mergeStream) Close() error {
+  var result error
+  for _, stream := range s.orig {
+    if err := stream.Close(); err != nil {
+      result = err
+    }
+  }
+  return result
 }
 
 type closeDoesNothing struct {

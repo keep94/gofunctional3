@@ -324,6 +324,101 @@ func TestNilStream(t *testing.T) {
   verifyDone(t, stream, new(int), err)
 }
 
+func TestMerge(t *testing.T) {
+  s1 := NewStreamFromValues([]int{5, 7, 10}, nil)
+  s2 := NewStreamFromValues([]int{3, 7, 8, 11}, nil)
+  s3 := NewStreamFromValues([]int{6, 7, 10}, nil)
+  stream := Merge(
+      newInt,
+      nil,
+      beforeInt,
+      s1,
+      s2,
+      s3)
+  results, err := toIntArray(stream)
+  if output := fmt.Sprintf("%v", results); output != "[3 5 6 7 7 7 8 10 10 11]" {
+    t.Errorf("Expected [3 5 6 7 7 7 8 10 10 11], got %v", output)
+  }
+  verifyDone(t, stream, new(int), err)
+}
+
+func TestMerge2(t *testing.T) {
+  s1 := NewStreamFromValues([]int{5, 7, 10}, nil)
+  stream := Merge(
+      newInt,
+      nil,
+      beforeInt,
+      NilStream(),
+      s1,
+      NilStream())
+  results, err := toIntArray(stream)
+  if output := fmt.Sprintf("%v", results); output != "[5 7 10]" {
+    t.Errorf("Expected [5 7 10], got %v", output)
+  }
+  verifyDone(t, stream, new(int), err)
+}
+
+func TestMergeEmpty(t *testing.T) {
+  stream := Merge(newInt, nil, beforeInt)
+  if stream != NilStream() {
+    t.Error("Did not get the nil stream.")
+  }
+}
+
+func TestMergeSingle(t *testing.T) {
+  s := xrange(7, 9)
+  stream := Merge(newInt, nil, beforeInt, s)
+  if s != stream {
+    t.Error("Merge should return its single argument.")
+  }
+}
+
+func TestMergeAllEmptyStreams(t *testing.T) {
+  stream := Merge(newInt, nil, beforeInt, NilStream(), NilStream())
+  results, err := toIntArray(stream)
+  if output := fmt.Sprintf("%v", results); output != "[]"  {
+    t.Errorf("Expected [] got %v", output)
+  }
+  verifyDone(t, stream, new(int), err)
+}
+
+func TestMergeCloseNormal(t *testing.T) {
+  x := &streamCloseChecker{NilStream(), &simpleCloseChecker{}}
+  y := &streamCloseChecker{NilStream(), &simpleCloseChecker{}}
+  stream := Merge(newInt, nil, beforeInt, x, y)
+  closeVerifyResult(t, stream, nil)
+  verifyCloseCalled(t, x, true)
+  verifyCloseCalled(t, y, true)
+}
+
+func TestMergeCloseError1(t *testing.T) {
+  x := &streamCloseChecker{NilStream(), &simpleCloseChecker{closeError: closeError}}
+  y := &streamCloseChecker{NilStream(), &simpleCloseChecker{}}
+  stream := Merge(newInt, nil, beforeInt, x, y)
+  closeVerifyResult(t, stream, closeError)
+  verifyCloseCalled(t, x, true)
+  verifyCloseCalled(t, y, true)
+}
+
+func TestMergeCloseError2(t *testing.T) {
+  x := &streamCloseChecker{NilStream(), &simpleCloseChecker{}}
+  y := &streamCloseChecker{NilStream(), &simpleCloseChecker{closeError: closeError}}
+  stream := Merge(newInt, nil, beforeInt, x, y)
+  closeVerifyResult(t, stream, closeError)
+  verifyCloseCalled(t, x, true)
+  verifyCloseCalled(t, y, true)
+}
+
+func TestMergeError(t *testing.T) {
+  x := xrange(1, 4)
+  y := Filter(errFilterer, xrange(5, 8))
+  stream := Merge(newInt, nil, beforeInt, x, y)
+  _, err := toIntArray(stream)
+  if err != filterError {
+    t.Errorf("Expected filterError, got %v", err)
+  }
+}
+
 func TestConcat(t *testing.T) {
   stream := Concat(xrange(5, 8), NilStream(), xrange(9, 11))
   results, err := toIntArray(stream)
@@ -1239,4 +1334,14 @@ func toIntAndStringArray(s Stream) ([]intAndString, error) {
     result = append(result, x)
   }
   return result, err
+}
+
+func newInt() interface{} {
+  return new(int)
+}
+
+func beforeInt(lhs, rhs interface{}) bool {
+  l := lhs.(*int)
+  r := rhs.(*int)
+  return *l < *r
 }
