@@ -221,7 +221,6 @@ func Cycle(f func() Stream) Stream {
 // to before, and the resulting Stream emits all elements in order according
 // to before. before returns true if the T element at lhs comes before the T
 // element at rhs. lhs and rhs are *T.
-// Merge is draft API, it may change in incompatible ways.
 func Merge(
     creater Creater,
     copier Copier, 
