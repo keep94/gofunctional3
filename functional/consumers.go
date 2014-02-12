@@ -30,15 +30,22 @@ func CompositeConsumer(
     ptr interface{},
     copier Copier,
     consumers ...Consumer) Consumer {
-  return ConsumerFunc(func(s Stream) error {
-    errors := MultiConsume(s, ptr, copier, consumers...)
-    for _, e := range errors {
-      if e != nil {
-        return e
-      }
-    }
-    return nil
-  })
+  switch len(consumers) {
+    case 0:
+      return nilConsumer{}
+    case 1:
+      return consumers[0]
+    default:
+      return ConsumerFunc(func(s Stream) error {
+        errors := MultiConsume(s, ptr, copier, consumers...)
+        for _, e := range errors {
+          if e != nil {
+            return e
+          }
+        }
+        return nil
+      })
+  }
 }
 
 // FilterConsumer creates a new Consumer whose Consume method applies f to the
@@ -82,22 +89,28 @@ func ModifyConsumer(
 // consumers. Passing null for copier means use simple assignment.
 // MultiConsume returns all the errors from the individual Consume methods.
 // The order of the returned errors matches the order of the consumers.
-func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consumer) (closeErrors []error) {
-  if len(consumers) == 0 {
+func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consumer) (errors []error) {
+  consumerLen := len(consumers)
+  if consumerLen == 0 {
     return
   }
+  errors = make([]error, consumerLen)
+  if consumerLen == 1 {
+    errors[0] = consumers[0].Consume(s)
+    return
+  }
+
   if copier == nil {
     copier = assignCopier
   }
-  streams := make([]splitStream, len(consumers))
-  closeErrors = make([]error, len(consumers))
+  streams := make([]splitStream, consumerLen)
   for i := range streams {
     streams[i] = splitStream{&emitterStream{ptrCh: make(chan interface{}), errCh: make(chan error)}}
     go func(s splitStream, c Consumer, e *error) {
       defer s.endStream()
       s.startStream()
       *e = c.Consume(s)
-    }(streams[i], consumers[i], &closeErrors[i])
+    }(streams[i], consumers[i], &errors[i])
   }
   var err error
   for asyncReturn(streams, err) {
@@ -112,6 +125,12 @@ func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consume
   return
 }
 
+// NilConsumer returns a consumer that consumes no values
+// NilConsumer is draft API and may change in incompatible ways.
+func NilConsumer() Consumer {
+  return nilConsumer{}
+}
+
 type splitStream struct {
   *emitterStream
 }
@@ -124,6 +143,13 @@ func (s splitStream) Next(ptr interface{}) error {
 }
 
 func (s splitStream) Close() error {
+  return nil
+}
+
+type nilConsumer struct {
+}
+
+func (n nilConsumer) Consume(s Stream) error {
   return nil
 }
 

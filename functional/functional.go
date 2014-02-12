@@ -227,7 +227,7 @@ func Merge(
     before func(lhs, rhs interface{}) bool,
     streams ...Stream) Stream {
   if len(streams) == 0 {
-    return NilStream()
+    return nilS
   }
   if len(streams) == 1 {
     return streams[0]

@@ -151,10 +151,38 @@ func TestConsumersEndEarly(t *testing.T) {
   }
 }
 
-func TestNoConsumers(t *testing.T) {
+func TestMultiConsumeZeroOrOne(t *testing.T) {
   errors := MultiConsume(Count(), new(int), nil)
   if len(errors) != 0 {
     t.Errorf("Expected MultiConsume to return empty slice")
+  }
+  consumer := &intConsumer{}
+  errors = MultiConsume(Slice(Count(), 0, 3), new(int), nil, consumer)
+  if len(errors) != 1 || errors[0] != nil {
+    t.Error("Expected nil error.")
+  }
+  if output := fmt.Sprintf("%v", consumer.results); output != "[0 1 2]" {
+    t.Errorf("Expected [0 1 2] got %v", output)
+  }
+  ec := ConsumerFunc(func(s Stream) error { return consumerError })
+  errors = MultiConsume(Count(), new(int), nil, ec)
+  if len(errors) != 1 || errors[0] != consumerError {
+    t.Error("Expected consumerError error.")
+  }
+}
+
+func TestComositeConsumerZeroOrOne(t *testing.T) {
+  if CompositeConsumer(
+      new(int),
+      nil) != NilConsumer() {
+    t.Error("Expected composing zero consumers to be the Nil consumer.")
+  }
+  consumer := &intConsumer{}
+  if CompositeConsumer(
+      new(int),
+      nil,
+      consumer) != consumer {
+    t.Errorf("Expected composing one consumer to be that consumer.")
   }
 }
 
