@@ -82,8 +82,7 @@ func TestModifyConsumerStreamAutoClose(t *testing.T) {
     slice = &streamCloseChecker{Slice(s, 0, 5), &simpleCloseChecker{}}
     return slice
   }
-  mc := ModifyConsumer(
-      ConsumerFunc(func(s Stream) error { return nil }), f)
+  mc := ModifyConsumer(NilConsumer(), f)
   doConsume(t, mc, s, nil)
   verifyCloseCalled(t, slice, true)
   verifyCloseCalled(t, s, false)
@@ -96,8 +95,7 @@ func TestModifyConsumerStreamAutoCloseError(t *testing.T) {
     slice = &streamCloseChecker{Slice(s, 0, 5), &simpleCloseChecker{closeError: closeError}}
     return slice
   }
-  mc := ModifyConsumer(
-      ConsumerFunc(func(s Stream) error { return nil }), f)
+  mc := ModifyConsumer(NilConsumer(), f)
   doConsume(t, mc, s, closeError)
   verifyCloseCalled(t, slice, true)
   verifyCloseCalled(t, s, false)
