@@ -125,8 +125,7 @@ func MultiConsume(s Stream, ptr interface{}, copier Copier, consumers ...Consume
   return
 }
 
-// NilConsumer returns a consumer that consumes no values
-// NilConsumer is draft API and may change in incompatible ways.
+// NilConsumer returns a consumer that consumes no values.
 func NilConsumer() Consumer {
   return nilConsumer{}
 }
