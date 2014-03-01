@@ -15,19 +15,32 @@ import (
 // the Stream is exhaused.
 type Buffer struct {
   buffer reflect.Value
-  addrFunc func(reflect.Value) interface{}
+  handler elementHandler
   idx int
 }
 
 // NewBuffer creates a new Buffer. aSlice is a []T used to store values.
 func NewBuffer(aSlice interface{}) *Buffer {
-  return &Buffer{buffer: sliceValue(aSlice, false), addrFunc: forValue}
+  return &Buffer{buffer: sliceValue(aSlice, false), handler: newValueHandler()}
 }
 
 // NewPtrBuffer creates a new Buffer. aSlice is a []*T used to store values.
-// Each pointer in aSlice should be non-nil.
+// nil pinters in aSlice are replaced with new(T) on demand.
 func NewPtrBuffer(aSlice interface{}) *Buffer {
-  return &Buffer{buffer: sliceValue(aSlice, true), addrFunc: forPtr}
+  return NewPtrBufferWithCreater(aSlice, nil)
+}
+
+// NewPtrBufferWithCreater creates a new Buffer.
+// aSlice is a []*T used to store values.
+// creater allocates memory to store the T values. nil means new(T). 
+// nil pinters in aSlice are replaced on demand.
+// NewPtrBufferWithCreater is draft API, it may change in incompatible ways.
+func NewPtrBufferWithCreater(
+    aSlice interface{}, creater functional.Creater) *Buffer {
+  aSliceValue := sliceValue(aSlice, true)
+  return &Buffer{
+      buffer: aSliceValue,
+      handler: newPtrHandler(creater, aSliceValue.Type())}
 }
 
 // Values returns the values gathered from the last Consume call. The number of
@@ -41,7 +54,7 @@ func (b *Buffer) Values() interface{} {
 
 // Consume fetches the values. s is a Stream of T.
 func (b *Buffer) Consume(s functional.Stream) (err error) {
-  b.idx, err = readStreamIntoSlice(s, b.buffer, b.addrFunc)
+  b.idx, err = readStreamIntoSlice(s, b.buffer, b.handler)
   if err == functional.Done {
     err = nil
   }
@@ -53,8 +66,7 @@ func (b *Buffer) Consume(s functional.Stream) (err error) {
 type GrowingBuffer struct {
   buffer reflect.Value
   sliceType reflect.Type
-  addrFunc func(reflect.Value) interface{}
-  creater func() reflect.Value
+  handler elementHandler
   idx int
 }
 
@@ -69,7 +81,7 @@ func NewGrowingBuffer(aSlice interface{}, initialLength int) *GrowingBuffer {
   }
   result := &GrowingBuffer{
       sliceType: sliceType(aSlice, false),
-      addrFunc: forValue}
+      handler: newValueHandler()}
   result.buffer = result.ensureCapacity(reflect.Value{}, initialLength)
   return result
 }
@@ -88,21 +100,9 @@ func NewPtrGrowingBuffer(
     panic("initialLength must be greater than 0.")
   }
   sliceType := sliceType(aSlice, true)
-  ttype := sliceType.Elem().Elem()
-  var c func() reflect.Value
-  if creater == nil {
-    c = func() reflect.Value {
-      return reflect.New(ttype)
-    }
-  } else {
-    c = func() reflect.Value {
-      return reflect.ValueOf(creater())
-    }
-  }
   result := &GrowingBuffer{
       sliceType: sliceType,
-      addrFunc: forPtr,
-      creater: c}
+      handler: newPtrHandler(creater, sliceType)}
   result.buffer = result.ensureCapacity(reflect.Value{}, initialLength)
   return result
 }
@@ -117,7 +117,7 @@ func (g *GrowingBuffer) Consume(s functional.Stream) (err error) {
       bufLen = g.buffer.Len()
     }
     var numRead int
-    numRead, err = readStreamIntoSlice(s, g.buffer.Slice(g.idx, bufLen), g.addrFunc)
+    numRead, err = readStreamIntoSlice(s, g.buffer.Slice(g.idx, bufLen), g.handler)
     g.idx += numRead
   }
   if err == functional.Done {
@@ -147,11 +147,6 @@ func (g *GrowingBuffer) ensureCapacity(
     for i := 0; i < oldLen; i++ {
       result.Index(i).Set(aSlice.Index(i))
     }
-    if g.creater != nil {
-      for i := oldLen; i < capacity; i++ {
-        result.Index(i).Set(g.creater())
-      }
-    }
     return result
   }
   return aSlice
@@ -164,7 +159,7 @@ func (g *GrowingBuffer) makeSlice(length int) reflect.Value {
 // PageBuffer reads a page of T values from a stream of T.
 type PageBuffer struct {
   buffer reflect.Value
-  addrFunc func(value reflect.Value) interface{}
+  handler elementHandler
   desired_page_no int
   pageLen int
   page_no int
@@ -177,21 +172,43 @@ type PageBuffer struct {
 // desiredPageNo is the desired 0-based page number. NewPageBuffer panics
 // if the length of aSlice is odd.
 func NewPageBuffer(aSlice interface{}, desiredPageNo int) *PageBuffer {
-  return newPageBuffer(sliceValue(aSlice, false), desiredPageNo, forValue)
+  return newPageBuffer(
+      sliceValue(aSlice, false),
+      desiredPageNo,
+      newValueHandler())
 }
 
 // NewPtrPageBuffer returns a new PageBuffer instance.
 // aSlice is a []*T whose length is double that of each page;
 // desiredPageNo is the desired 0-based page number. NewPageBuffer panics
-// if the length of aSlice is odd. Each element of aSlice should be non-nil.
+// if the length of aSlice is odd.
+// nil pointers in aSlice are replaced with new(T) on demand.
 func NewPtrPageBuffer(aSlice interface{}, desiredPageNo int) *PageBuffer {
-  return newPageBuffer(sliceValue(aSlice, true), desiredPageNo, forPtr)
+  return NewPtrPageBufferWithCreater(aSlice, desiredPageNo, nil)
+}
+
+// NewPtrPageBufferWithCreater returns a new PageBuffer instance.
+// aSlice is a []*T whose length is double that of each page;
+// desiredPageNo is the desired 0-based page number;
+// creater allocates memory to store the T values. nil means new(T). 
+// NewPageBuffer panics if the length of aSlice is odd.
+// nil pointers in aSlice are replaced on demand.
+// NewPtrPageBufferWithCreater is draft API, it may change in incompatible ways.
+func NewPtrPageBufferWithCreater(
+    aSlice interface{},
+    desiredPageNo int,
+    creater functional.Creater) *PageBuffer {
+  aSliceValue := sliceValue(aSlice, true)
+  return newPageBuffer(
+      aSliceValue,
+      desiredPageNo,
+      newPtrHandler(creater, aSliceValue.Type()))
 }
 
 func newPageBuffer(
     aSlice reflect.Value,
     desiredPageNo int,
-    addrFunc func(reflect.Value) interface{}) *PageBuffer {
+    handler elementHandler) *PageBuffer {
   l := aSlice.Len()
   if l % 2 == 1 {
     panic("Slice passed to NewPageBuffer must have even length.")
@@ -201,7 +218,7 @@ func newPageBuffer(
   }
   return &PageBuffer{
       buffer: aSlice,
-      addrFunc: addrFunc,
+      handler: handler,
       desired_page_no: desiredPageNo,
       pageLen: l / 2}
 }
@@ -237,10 +254,12 @@ func (pb *PageBuffer) Consume(s functional.Stream) (err error) {
     }
     offset := pb.pageOffset(pb.page_no)
     pb.idx, err = readStreamIntoSlice(
-        s, pb.buffer.Slice(offset, offset + pb.pageLen), pb.addrFunc)
+        s, pb.buffer.Slice(offset, offset + pb.pageLen), pb.handler)
   }
   if err == nil {
-    pb.is_end = s.Next(pb.addrFunc(pb.buffer.Index(pb.pageOffset(pb.page_no + 1)))) == functional.Done
+    anElement := pb.buffer.Index(pb.pageOffset(pb.page_no + 1))
+    pb.handler.ensureValid(anElement)
+    pb.is_end = s.Next(pb.handler.toInterface(anElement)) == functional.Done
   } else if err == functional.Done {
     pb.is_end = true
     err = nil
@@ -274,21 +293,59 @@ func FirstOnly(stream functional.Stream, emptyError error, ptr interface{}) (err
   return
 }
 
-func forValue(value reflect.Value) interface{} {
+type elementHandler interface {
+  toInterface(value reflect.Value) interface{}
+  ensureValid(value reflect.Value)
+}
+
+func newValueHandler() elementHandler {
+  return valueHandler{}
+}
+
+func newPtrHandler(
+    creater functional.Creater, aSliceType reflect.Type) elementHandler {
+  if creater == nil {
+    ttype := aSliceType.Elem().Elem()
+    return ptrHandler(func() reflect.Value {
+      return reflect.New(ttype)
+    })
+  }
+  return ptrHandler(func() reflect.Value {
+    return reflect.ValueOf(creater())
+  })
+}
+
+type valueHandler struct {
+}
+
+func (v valueHandler) toInterface(value reflect.Value) interface{} {
   return value.Addr().Interface()
 }
 
-func forPtr(ptrValue reflect.Value) interface{} {
-  return ptrValue.Interface()
+func (v valueHandler) ensureValid(value reflect.Value) {
+}
+
+type ptrHandler func() reflect.Value
+
+func (p ptrHandler) toInterface(value reflect.Value) interface{} {
+  return value.Interface()
+}
+
+func (p ptrHandler) ensureValid(value reflect.Value) {
+  if value.IsNil() {
+    value.Set(p())
+  }
 }
 
 func readStreamIntoSlice(
      s functional.Stream,
      aSlice reflect.Value,
-     addrFunc func(reflect.Value) interface{}) (numRead int, err error) {
+     handler elementHandler) (numRead int, err error) {
   l := aSlice.Len()
   for numRead = 0; numRead < l; numRead++ {
-    err = s.Next(addrFunc(aSlice.Index(numRead)))
+    anElement := aSlice.Index(numRead)
+    handler.ensureValid(anElement)
+    err = s.Next(handler.toInterface(anElement))
     if err != nil {
       break
     }

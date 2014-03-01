@@ -22,7 +22,14 @@ var (
 
 func TestPtrBuffer(t *testing.T) {
   stream := functional.Count()
-  b := newPtrBuffer(5)
+  b := NewPtrBuffer(make([]*int, 5))
+  doConsume(t, b, stream, nil)
+  verifyPtrFetched(t, b, 0, 5)
+}
+
+func TestPtrBufferWithCreater(t *testing.T) {
+  stream := functional.Count()
+  b := NewPtrBufferWithCreater(make([]*int, 5), intCreater)
   doConsume(t, b, stream, nil)
   verifyPtrFetched(t, b, 0, 5)
 }
@@ -63,8 +70,7 @@ func TestPtrGrowingBuffer(t *testing.T) {
 
 func TestPtrGrowingBuffer2(t *testing.T) {
   stream := functional.Slice(functional.Count(), 0, 6)
-  b := NewPtrGrowingBuffer(
-      intPtrSlice, 1, func() interface{} { return new(int) })
+  b := NewPtrGrowingBuffer(intPtrSlice, 1, intCreater)
   doConsume(t, b, stream, nil)
   verifyPtrFetched(t, b, 0, 6)
   if actual := cap(b.Values().([]*int)); actual != 8 {
@@ -110,7 +116,14 @@ func TestGrowingBufferError(t *testing.T) {
 
 func TestPtrPageBuffer(t *testing.T) {
   stream := functional.Count()
-  pb := newPtrPageBuffer(6, 0)
+  pb := NewPtrPageBuffer(make([]*int, 6), 0)
+  doConsume(t, pb, stream, nil)
+  verifyPtrPageFetched(t, pb, 0, 3, 0, false)
+}
+
+func TestPtrPageBufferWithCreater(t *testing.T) {
+  stream := functional.Count()
+  pb := NewPtrPageBufferWithCreater(make([]*int, 6), 0, intCreater)
   doConsume(t, pb, stream, nil)
   verifyPtrPageFetched(t, pb, 0, 3, 0, false)
 }
@@ -315,22 +328,6 @@ func verifyPtrValues(t *testing.T, values []*int, start int, end int) {
   }
 }
 
-func newPtrBuffer(size int) *Buffer {
-  array := make([]*int, size)
-  for i := range array {
-    array[i] = new(int)
-  }
-  return NewPtrBuffer(array)
-}
-
-func newPtrPageBuffer(size, desiredPageNo int) *PageBuffer {
-  array := make([]*int, size)
-  for i := range array {
-    array[i] = new(int)
-  }
-  return NewPtrPageBuffer(array, desiredPageNo)
-}
-
 func doConsume(
     t *testing.T,
     c functional.Consumer,
@@ -339,5 +336,9 @@ func doConsume(
   if err := c.Consume(s); err != expectedError {
     t.Errorf("Expected %v, got %v", expectedError, err)
   }
+}
+
+func intCreater() interface{} {
+  return new(int)
 }
 
