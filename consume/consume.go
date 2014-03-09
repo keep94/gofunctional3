@@ -47,7 +47,8 @@ func NewPtrBufferWithCreater(
 // values gathered will not exceed the length of the original slice passed
 // to NewBuffer. Returned value is a []T or []*T depending on whether
 // NewBuffer or NewPtrBuffer was used to create this instance. Returned
-// value remains valid until the next call to Consume.
+// slice, and each pointer in slice if a []*T, remains valid until the next
+// call to Consume.
 func (b *Buffer) Values() interface{} {
   return b.buffer.Slice(0, b.idx).Interface()
 }
@@ -129,7 +130,8 @@ func (g *GrowingBuffer) Consume(s functional.Stream) (err error) {
 // Values returns the values gathered from the last Consume call.
 // Returned value is a []T or []*T depending on whether
 // NewGrowingBuffer or NewPtrGrowingBuffer was used to create this instance.
-// Returned value remains valid until the next call to Consume.
+// Returned slice, and each pointer in slice if a []*T, remains valid until
+// the next call to Consume.
 func (g *GrowingBuffer) Values() interface{} {
   return g.buffer.Slice(0, g.idx).Interface()
 }
@@ -225,7 +227,8 @@ func newPageBuffer(
 
 // Values returns the values of the fetched page as a []T or a []*T depending
 // on whether NewPageBuffer or NewPtrPageBuffer was used to create this
-// insstance. Returned slice is valid until next call to consume.
+// instance. Returned slice, and each pointer in slice if a []*T, is valid
+// until next call to consume.
 func (pb *PageBuffer) Values() interface{} {
   offset := pb.pageOffset(pb.page_no)
   return pb.buffer.Slice(offset, offset + pb.idx).Interface()
