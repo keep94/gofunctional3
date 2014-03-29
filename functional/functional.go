@@ -323,11 +323,7 @@ func Any(fs ...Filterer) Filterer {
   if len(fs) == 1 {
     return fs[0]
   }
-  ors := make([][]Filterer, len(fs))
-  for i := range fs {
-    ors[i] = orList(fs[i])
-  }
-  return orFilterer(filterFlatten(ors))
+  return orFilterer(filterFlatten(fs, orAppend))
 }
 
 // All returns a Filterer that returns nil if all of the
@@ -339,11 +335,7 @@ func All(fs ...Filterer) Filterer {
   if len(fs) == 1 {
     return fs[0]
   }
-  ands := make([][]Filterer, len(fs))
-  for i := range fs {
-    ands[i] = andList(fs[i])
-  }
-  return andFilterer(filterFlatten(ands))
+  return andFilterer(filterFlatten(fs, andAppend))
 }
 
 // Compose composes two Mappers together into one e.g f(g(x)). If g maps
@@ -880,35 +872,49 @@ func (s *closeStream) Close() error {
   return s.Closer.Close()
 }
 
-func orList(f Filterer) []Filterer {
+func orAppend(f Filterer, dest []Filterer) int {
   switch i := f.(type) {
     case orFilterer:
-      return i
+      if dest == nil {
+        return len(i)
+      }
+      return copy(dest, i)
     case falseFilterer:
-      return nil
+      return 0
   }
-  return []Filterer{f}
+  if dest != nil {
+    dest[0] = f
+  }
+  return 1
 }
 
-func andList(f Filterer) []Filterer {
+func andAppend(f Filterer, dest []Filterer) int {
   switch i := f.(type) {
     case andFilterer:
-      return i
+      if dest == nil {
+        return len(i)
+      }
+      return copy(dest, i)
     case trueFilterer:
-      return nil
+      return 0
   }
-  return []Filterer{f}
+  if dest != nil {
+    dest[0] = f
+  }
+  return 1
 }
 
-func filterFlatten(fs [][]Filterer) []Filterer {
+func filterFlatten(
+    fs []Filterer,
+     appendFunc func(f Filterer, dest []Filterer) int) []Filterer {
   var l int
   for i := range fs {
-    l += len(fs[i])
+    l += appendFunc(fs[i], nil)
   }
   result := make([]Filterer, l)
   n := 0
   for i := range fs {
-    n += copy(result[n:], fs[i])
+    n += appendFunc(fs[i], result[n:])
   }
   return result
 }
