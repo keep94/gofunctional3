@@ -20,7 +20,7 @@ added may be marked as provisional, draft API.
 
 ## Online Documentation
 
-Online documentation is available [here](http://go.pkgdoc.org/github.com/keep94/gofunctional3).
+Online documentation is available [here](http://godoc.org/github.com/keep94/gofunctional3).
 
 ## Release notes and what changed from gofunctional2
 
