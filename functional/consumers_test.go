@@ -29,6 +29,28 @@ var (
   })
 )
 
+func TestMapConsumer(t *testing.T) {
+  consumer := &intConsumer{}
+  mconsumer := MapConsumer(
+      consumer,
+      NewMapper(func(src, dest interface{}) error {
+        s := src.(*float64)
+        d := dest.(*int)
+        *d = int((*s) * (*s))
+        return nil
+      }),
+      new(float64))
+  stream := NewStreamFromValues([]float64{1.733, 2.237, 3.163}, nil)
+  doConsume(
+      t,
+      mconsumer,
+      stream,
+      nil)
+  if output := fmt.Sprintf("%v", consumer.results); output != "[3 5 10]" {
+    t.Errorf("Expected [3 5 10] got %v", output)
+  }
+}
+
 func TestCompositeConsumer(t *testing.T) {
   ec := &intConsumer{}
   oc := &intConsumer{}

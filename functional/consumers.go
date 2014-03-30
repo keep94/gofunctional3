@@ -51,11 +51,20 @@ func CompositeConsumer(
 // FilterConsumer creates a new Consumer whose Consume method applies f to the
 // Stream before passing it onto c.
 func FilterConsumer(c Consumer, f Filterer) Consumer {
-  return ModifyConsumer(
-      c,
-      func(s Stream) Stream {
-        return Filter(f, s)
-      })
+  return ConsumerFunc(func(s Stream) error {
+    return c.Consume(Filter(f, s))
+  })
+}
+
+// MapConsumer creates a new Consumer whose Consume method applies m to the
+// Stream before passing it onto c. c cnsumes U values; m maps T values to
+// U Values; ptr is *T to temporarily hold T values, and this function
+// returns a consumer of T values.
+// MapConsumer is draft API. It may change in incompatible ways.
+func MapConsumer(c Consumer, m Mapper, ptr interface{}) Consumer {
+  return ConsumerFunc(func(s Stream) error {
+    return c.Consume(Map(m, s, ptr))
+  })
 }
 
 // ModifyConsumer returns a new Consumer
