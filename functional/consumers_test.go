@@ -20,6 +20,18 @@ var (
     }
     return Skipped
   })
+  squareFilterer = NewFilterer(func(ptr interface{}) error {
+    p := ptr.(*int)
+    *p = (*p) * (*p)
+    return nil
+  })
+
+  plusOneFilterer = NewFilterer(func(ptr interface{}) error {
+    p := ptr.(*int)
+    *p = (*p) + 1
+    return nil
+  })
+  
   oddFilterer = NewFilterer(func(ptr interface{}) error {
     p := ptr.(*int)
     if *p % 2 != 0 {
@@ -27,18 +39,27 @@ var (
     }
     return Skipped
   })
+
+  squareFloat64IntMapper = NewMapper(func(src, dest interface{}) error {
+    s := src.(*float64)
+    d := dest.(*int)
+    *d = int((*s) * (*s))
+    return nil
+  })
+
+  float32Plus1Float64Mapper = NewMapper(func(src, dest interface{}) error {
+    s := src.(*float32)
+    d := dest.(*float64)
+    *d = float64(*s + 1.0)
+    return nil
+  })
 )
 
 func TestMapConsumer(t *testing.T) {
   consumer := &intConsumer{}
   mconsumer := MapConsumer(
       consumer,
-      NewMapper(func(src, dest interface{}) error {
-        s := src.(*float64)
-        d := dest.(*int)
-        *d = int((*s) * (*s))
-        return nil
-      }),
+      squareFloat64IntMapper,
       new(float64))
   stream := NewStreamFromValues([]float64{1.733, 2.237, 3.163}, nil)
   doConsume(
@@ -48,6 +69,49 @@ func TestMapConsumer(t *testing.T) {
       nil)
   if output := fmt.Sprintf("%v", consumer.results); output != "[3 5 10]" {
     t.Errorf("Expected [3 5 10] got %v", output)
+  }
+}
+
+func TestNestedMapConsumer(t *testing.T) {
+  consumer := &intConsumer{}
+  mconsumer := MapConsumer(
+      MapConsumer(
+          consumer,
+          squareFloat64IntMapper,
+          new(float64)),
+      float32Plus1Float64Mapper,
+      new(float32))
+  stream := NewStreamFromValues([]float32{0.733, 1.237, 2.163}, nil)
+  doConsume(
+      t,
+      mconsumer,
+      stream,
+      nil)
+  if output := fmt.Sprintf("%v", consumer.results); output != "[3 5 10]" {
+    t.Errorf("Expected [3 5 10] got %v", output)
+  }
+}
+
+func TestNestedFilterConsumer(t *testing.T) {
+  consumer := &intConsumer{}
+  fconsumer := FilterConsumer(
+      FilterConsumer(
+          FilterConsumer(
+              consumer,
+              evenFilterer,
+          ),
+          plusOneFilterer,
+      ),
+      squareFilterer,
+  )
+  stream := NewStreamFromValues([]int{2, 3, 5, 7}, nil)
+  doConsume(
+      t,
+      fconsumer,
+      stream,
+      nil)
+  if output := fmt.Sprintf("%v", consumer.results); output != "[10 26 50]" {
+    t.Errorf("Expected [10 26 50] got %v", output)
   }
 }
 

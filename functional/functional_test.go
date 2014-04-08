@@ -754,7 +754,7 @@ func TestAny(t *testing.T) {
   b := Any()
   c := Any(equal(3))
   d := equal(4)
-  e := Any(a, b, c, d)
+  e := Any(a, b, c, d, b)
   for i := 1; i <= 4; i++ {
     if output := e.Filter(ptrInt(i)); output != nil {
       t.Errorf("Expected nil, got %v", output)
@@ -773,7 +773,7 @@ func TestAll(t *testing.T) {
   b := All()
   c := All(notEqual(3))
   d := notEqual(4)
-  e := All(a, b, c, d)
+  e := All(a, b, c, d, b)
   for i := 1; i <= 4; i++ {
     if output := e.Filter(ptrInt(i)); output != Skipped {
       t.Errorf("Expected Skipped, got %v", output)
@@ -1030,11 +1030,16 @@ func TestFastComposeCompose(t *testing.T) {
 
 func TestNoCloseStream(t *testing.T) {
   s := &streamCloseChecker{Count(), &simpleCloseChecker{}}
-  stream := Slice(NoCloseStream(s), 0, 3)
-  toIntArray(stream)
-  if s.closeCalled() {
-    t.Error("Did not expect close to be called on underlying stream.")
-  }
+  stream := NoCloseStream(s)
+  closeVerifyResult(t, stream, nil)
+  verifyCloseCalled(t, s, false)
+}
+
+func TestNestedNoCloseStream(t *testing.T) {
+  s := &streamCloseChecker{Count(), &simpleCloseChecker{}}
+  stream := NoCloseStream(NoCloseStream(s))
+  closeVerifyResult(t, stream, nil)
+  verifyCloseCalled(t, s, false)
 }
 
 func verifyDupClose(t *testing.T, c io.Closer) {

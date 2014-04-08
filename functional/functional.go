@@ -10,6 +10,7 @@ import (
   "bufio"
   "container/heap"
   "errors"
+  "github.com/keep94/common"
   "io"
   "reflect"
 )
@@ -317,25 +318,15 @@ func DropWhile(f Filterer, s Stream) Stream {
 // Any returns a Filterer that returns Skipped if all of the fs return
 // Skipped. Otherwise it returns nil or the first error not equal to Skipped.
 func Any(fs ...Filterer) Filterer {
-  if len(fs) == 0 {
-    return falseF
-  }
-  if len(fs) == 1 {
-    return fs[0]
-  }
-  return orFilterer(filterFlatten(fs, orAppend))
+  var aggregate orFilterer
+  return common.Join(fs, aggregate, falseF).(Filterer)
 }
 
 // All returns a Filterer that returns nil if all of the
 // fs return nil. Otherwise it returns the first error encountered.
 func All(fs ...Filterer) Filterer {
-  if len(fs) == 0 {
-    return trueF
-  }
-  if len(fs) == 1 {
-    return fs[0]
-  }
-  return andFilterer(filterFlatten(fs, andAppend))
+  var aggregate andFilterer
+  return common.Join(fs, aggregate, trueF).(Filterer)
 }
 
 // Compose composes two Mappers together into one e.g f(g(x)). If g maps
@@ -370,6 +361,9 @@ func FastCompose(f Mapper, g Mapper, ptr interface{}) Mapper {
 // nothing. This function is useful for preventing a stream from
 // closing its underlying stream.
 func NoCloseStream(s Stream) Stream {
+  if _, ok := s.(noCloseStream); ok {
+    return s
+  }
   return noCloseStream{s}
 }
 
@@ -870,53 +864,6 @@ type closeStream struct {
 
 func (s *closeStream) Close() error {
   return s.Closer.Close()
-}
-
-func orAppend(f Filterer, dest []Filterer) int {
-  switch i := f.(type) {
-    case orFilterer:
-      if dest == nil {
-        return len(i)
-      }
-      return copy(dest, i)
-    case falseFilterer:
-      return 0
-  }
-  if dest != nil {
-    dest[0] = f
-  }
-  return 1
-}
-
-func andAppend(f Filterer, dest []Filterer) int {
-  switch i := f.(type) {
-    case andFilterer:
-      if dest == nil {
-        return len(i)
-      }
-      return copy(dest, i)
-    case trueFilterer:
-      return 0
-  }
-  if dest != nil {
-    dest[0] = f
-  }
-  return 1
-}
-
-func filterFlatten(
-    fs []Filterer,
-     appendFunc func(f Filterer, dest []Filterer) int) []Filterer {
-  var l int
-  for i := range fs {
-    l += appendFunc(fs[i], nil)
-  }
-  result := make([]Filterer, l)
-  n := 0
-  for i := range fs {
-    n += appendFunc(fs[i], result[n:])
-  }
-  return result
 }
 
 func mapperLen(m Mapper) int {

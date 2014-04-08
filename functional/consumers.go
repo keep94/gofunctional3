@@ -51,9 +51,13 @@ func CompositeConsumer(
 // FilterConsumer creates a new Consumer whose Consume method applies f to the
 // Stream before passing it onto c.
 func FilterConsumer(c Consumer, f Filterer) Consumer {
-  return ConsumerFunc(func(s Stream) error {
-    return c.Consume(Filter(f, s))
-  })
+  if nested, ok := c.(*filterConsumer); ok {
+    return &filterConsumer{
+        consumer: nested.consumer,
+        filter: All(f, nested.filter),
+    }
+  }
+  return &filterConsumer{consumer: c, filter: f}
 }
 
 // MapConsumer creates a new Consumer whose Consume method applies m to the
@@ -62,9 +66,14 @@ func FilterConsumer(c Consumer, f Filterer) Consumer {
 // returns a consumer of T values.
 // MapConsumer is draft API. It may change in incompatible ways.
 func MapConsumer(c Consumer, m Mapper, ptr interface{}) Consumer {
-  return ConsumerFunc(func(s Stream) error {
-    return c.Consume(Map(m, s, ptr))
-  })
+  if nested, ok := c.(*mapConsumer); ok {
+    return &mapConsumer{
+        consumer: nested.consumer,
+        mapper: FastCompose(nested.mapper, m, nested.ptr),
+        ptr: ptr,
+    }
+  }
+  return &mapConsumer{consumer: c, mapper: m, ptr: ptr}
 }
 
 // ModifyConsumer returns a new Consumer
@@ -159,6 +168,25 @@ type nilConsumer struct {
 
 func (n nilConsumer) Consume(s Stream) error {
   return nil
+}
+
+type filterConsumer struct {
+  consumer Consumer
+  filter Filterer
+}
+
+func (f *filterConsumer) Consume(s Stream) error {
+  return f.consumer.Consume(Filter(f.filter, s))
+}
+
+type mapConsumer struct {
+  consumer Consumer
+  mapper Mapper
+  ptr interface{}
+}
+
+func (m *mapConsumer) Consume(s Stream) error {
+  return m.consumer.Consume(Map(m.mapper, s, m.ptr))
 }
 
 func asyncReturn(streams []splitStream, err error) bool {
