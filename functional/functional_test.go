@@ -810,18 +810,20 @@ func TestAllWithMapper(t *testing.T) {
 func TestAllAnyComposition(t *testing.T) {
   a := All(
     Any(equal(1), equal(2), equal(3)),
+    Any(),
     Any(equal(4), equal(5)))
-  if x := len(a.(andFilterer)); x != 2 {
-    t.Errorf("Expected 2, got %v", x)
+  if x := len(a.(andFilterer)); x != 3 {
+    t.Errorf("Expected 3, got %v", x)
   }
 }
 
 func TestAnyAllComposition(t *testing.T) {
   a := Any(
     All(equal(1), equal(2), equal(3)),
+    All(),
     All(equal(4), equal(5)))
-  if x := len(a.(orFilterer)); x != 2 {
-    t.Errorf("Expected 2, got %v", x)
+  if x := len(a.(orFilterer)); x != 3 {
+    t.Errorf("Expected 3, got %v", x)
   }
 }
 
