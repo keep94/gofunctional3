@@ -21,26 +21,18 @@ type Buffer struct {
 
 // NewBuffer creates a new Buffer. aSlice is a []T used to store values.
 func NewBuffer(aSlice interface{}) *Buffer {
-  return &Buffer{buffer: sliceValue(aSlice, false), handler: newValueHandler()}
+  return &Buffer{buffer: sliceValue(aSlice, false), handler: valueHandler{}}
 }
 
 // NewPtrBuffer creates a new Buffer. aSlice is a []*T used to store values.
-// nil pinters in aSlice are replaced with new(T) on demand.
+// If a *T value in aSlice is nil, the Consume method will replace it using
+// new(T).
 func NewPtrBuffer(aSlice interface{}) *Buffer {
-  return NewPtrBufferWithCreater(aSlice, nil)
-}
-
-// NewPtrBufferWithCreater creates a new Buffer.
-// aSlice is a []*T used to store values.
-// creater allocates memory to store the T values. nil means new(T). 
-// nil pinters in aSlice are replaced on demand.
-// NewPtrBufferWithCreater is draft API, it may change in incompatible ways.
-func NewPtrBufferWithCreater(
-    aSlice interface{}, creater functional.Creater) *Buffer {
   aSliceValue := sliceValue(aSlice, true)
   return &Buffer{
       buffer: aSliceValue,
-      handler: newPtrHandler(creater, aSliceValue.Type())}
+      handler: overwriteNilPtrHandler{
+          creater: newCreaterFunc(nil, aSliceValue.Type())}}
 }
 
 // Values returns the values gathered from the last Consume call. The number of
@@ -72,41 +64,48 @@ type GrowingBuffer struct {
 }
 
 // NewGrowingBuffer creates a new GrowingBuffer that stores the read values
-// as a []T. aSlice is a []T. Although the aSlice value is never read,
-// GrowingBuffer needs it to create new slices via reflection when growing
-// the buffer. initialLength is the initial size of the slice used to store
-// the read values and must be greater than 0.
-func NewGrowingBuffer(aSlice interface{}, initialLength int) *GrowingBuffer {
-  if initialLength <= 0 {
-    panic("initialLength must be greater than 0.")
-  }
-  result := &GrowingBuffer{
-      sliceType: sliceType(aSlice, false),
-      handler: newValueHandler()}
-  result.buffer = result.ensureCapacity(reflect.Value{}, initialLength)
-  return result
+// as a []T. aSlice is a []T and should be nil. GrowingBuffer uses aSlice to
+// make slices internally via reflection. length is a hint for how many values
+// will be read and must be non negative.
+func NewGrowingBuffer(aSlice interface{}, length int) *GrowingBuffer {
+  return newGrowingBuffer(
+      sliceType(aSlice, false),
+      valueHandler{},
+      length)
 }
 
 // NewPtrGrowingBuffer creates a new GrowingBuffer that stores the read values
-// as a []*T. aSlice is a []*T. Although the aSlice value is never read,
-// GrowingBuffer needs it to create new slices via reflection when growing
-// the buffer. initialLength is the initial size of the slice used to store
-// the read values and must be greater than 0. creater allocates memory to
-// store the T values. nil means new(T).
+// as a []*T. aSlice is a []*T and should be nil. GrowingBuffer uses aSlice to
+// make slices internally via reflection. length is a hint for how many values
+// will be read and must be non negative. creater allocates space to store
+// one T value. nil means new(T).
 func NewPtrGrowingBuffer(
     aSlice interface{},
-    initialLength int,
+    length int,
     creater functional.Creater) *GrowingBuffer {
-  if initialLength <= 0 {
-    panic("initialLength must be greater than 0.")
+  aSliceType := sliceType(aSlice, true)
+  return newGrowingBuffer(
+      aSliceType,
+      overwritePtrHandler{
+          creater: newCreaterFunc(creater, aSliceType)},
+      length)
+}
+
+func newGrowingBuffer(
+    aSliceType reflect.Type,
+    handler elementHandler,
+    length int) *GrowingBuffer {
+  if length < 0 {
+    panic("length must be non negative")
   }
-  sliceType := sliceType(aSlice, true)
   result := &GrowingBuffer{
-      sliceType: sliceType,
-      handler: newPtrHandler(creater, sliceType)}
-  result.buffer = result.ensureCapacity(reflect.Value{}, initialLength)
+      sliceType: aSliceType,
+      handler: handler}
+  // Make room for detecting end of data
+  result.buffer = result.ensureCapacity(reflect.Value{}, length + 1)
   return result
 }
+    
 
 // Consume fetches the values. s is a Stream of T.
 func (g *GrowingBuffer) Consume(s functional.Stream) (err error) {
@@ -130,8 +129,7 @@ func (g *GrowingBuffer) Consume(s functional.Stream) (err error) {
 // Values returns the values gathered from the last Consume call.
 // Returned value is a []T or []*T depending on whether
 // NewGrowingBuffer or NewPtrGrowingBuffer was used to create this instance.
-// Returned slice, and each pointer in slice if a []*T, remains valid until
-// the next call to Consume.
+// Returned slice remains valid until the next call to Consume.
 func (g *GrowingBuffer) Values() interface{} {
   return g.buffer.Slice(0, g.idx).Interface()
 }
@@ -177,34 +175,21 @@ func NewPageBuffer(aSlice interface{}, desiredPageNo int) *PageBuffer {
   return newPageBuffer(
       sliceValue(aSlice, false),
       desiredPageNo,
-      newValueHandler())
+      valueHandler{})
 }
 
 // NewPtrPageBuffer returns a new PageBuffer instance.
 // aSlice is a []*T whose length is double that of each page;
 // desiredPageNo is the desired 0-based page number. NewPageBuffer panics
-// if the length of aSlice is odd.
-// nil pointers in aSlice are replaced with new(T) on demand.
+// if the length of aSlice is odd. If a *T value in aSlice is nil,
+// the Consume method will replace it using new(T).
 func NewPtrPageBuffer(aSlice interface{}, desiredPageNo int) *PageBuffer {
-  return NewPtrPageBufferWithCreater(aSlice, desiredPageNo, nil)
-}
-
-// NewPtrPageBufferWithCreater returns a new PageBuffer instance.
-// aSlice is a []*T whose length is double that of each page;
-// desiredPageNo is the desired 0-based page number;
-// creater allocates memory to store the T values. nil means new(T). 
-// NewPageBuffer panics if the length of aSlice is odd.
-// nil pointers in aSlice are replaced on demand.
-// NewPtrPageBufferWithCreater is draft API, it may change in incompatible ways.
-func NewPtrPageBufferWithCreater(
-    aSlice interface{},
-    desiredPageNo int,
-    creater functional.Creater) *PageBuffer {
   aSliceValue := sliceValue(aSlice, true)
   return newPageBuffer(
       aSliceValue,
       desiredPageNo,
-      newPtrHandler(creater, aSliceValue.Type()))
+      overwriteNilPtrHandler{
+          creater: newCreaterFunc(nil, aSliceValue.Type())})
 }
 
 func newPageBuffer(
@@ -228,7 +213,7 @@ func newPageBuffer(
 // Values returns the values of the fetched page as a []T or a []*T depending
 // on whether NewPageBuffer or NewPtrPageBuffer was used to create this
 // instance. Returned slice, and each pointer in slice if a []*T, is valid
-// until next call to consume.
+// until next call to Consume.
 func (pb *PageBuffer) Values() interface{} {
   offset := pb.pageOffset(pb.page_no)
   return pb.buffer.Slice(offset, offset + pb.idx).Interface()
@@ -296,26 +281,22 @@ func FirstOnly(stream functional.Stream, emptyError error, ptr interface{}) (err
   return
 }
 
+func newCreaterFunc(
+    creater functional.Creater, aSliceType reflect.Type) func() reflect.Value {
+  if creater == nil {
+    ttype := aSliceType.Elem().Elem()
+    return func() reflect.Value {
+      return reflect.New(ttype)
+    }
+  }
+  return func() reflect.Value {
+    return reflect.ValueOf(creater())
+  }
+}
+
 type elementHandler interface {
   toInterface(value reflect.Value) interface{}
   ensureValid(value reflect.Value)
-}
-
-func newValueHandler() elementHandler {
-  return valueHandler{}
-}
-
-func newPtrHandler(
-    creater functional.Creater, aSliceType reflect.Type) elementHandler {
-  if creater == nil {
-    ttype := aSliceType.Elem().Elem()
-    return ptrHandler(func() reflect.Value {
-      return reflect.New(ttype)
-    })
-  }
-  return ptrHandler(func() reflect.Value {
-    return reflect.ValueOf(creater())
-  })
 }
 
 type valueHandler struct {
@@ -328,16 +309,31 @@ func (v valueHandler) toInterface(value reflect.Value) interface{} {
 func (v valueHandler) ensureValid(value reflect.Value) {
 }
 
-type ptrHandler func() reflect.Value
+type ptrHandler struct {
+}
 
 func (p ptrHandler) toInterface(value reflect.Value) interface{} {
   return value.Interface()
 }
 
-func (p ptrHandler) ensureValid(value reflect.Value) {
+type overwriteNilPtrHandler struct {
+  ptrHandler
+  creater func() reflect.Value
+}
+
+func (p overwriteNilPtrHandler) ensureValid(value reflect.Value) {
   if value.IsNil() {
-    value.Set(p())
+    value.Set(p.creater())
   }
+}
+
+type overwritePtrHandler struct {
+  ptrHandler
+  creater func() reflect.Value
+}
+
+func (p overwritePtrHandler) ensureValid(value reflect.Value) {
+  value.Set(p.creater())
 }
 
 func readStreamIntoSlice(

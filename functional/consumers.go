@@ -64,7 +64,6 @@ func FilterConsumer(c Consumer, f Filterer) Consumer {
 // Stream before passing it onto c. c cnsumes U values; m maps T values to
 // U Values; ptr is *T to temporarily hold T values, and this function
 // returns a consumer of T values.
-// MapConsumer is draft API. It may change in incompatible ways.
 func MapConsumer(c Consumer, m Mapper, ptr interface{}) Consumer {
   if nested, ok := c.(*mapConsumer); ok {
     return &mapConsumer{

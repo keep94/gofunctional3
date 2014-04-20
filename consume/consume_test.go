@@ -29,9 +29,20 @@ func TestPtrBuffer(t *testing.T) {
 
 func TestPtrBufferWithCreater(t *testing.T) {
   stream := functional.Count()
-  b := NewPtrBufferWithCreater(make([]*int, 5), intCreater)
+  aslice := make([]*int, 5)
+  for i := range aslice {
+    aslice[i] = new(int)
+  }
+  origSlice := make([]*int, len(aslice))
+  copy(origSlice, aslice)
+  b := NewPtrBuffer(aslice)
   doConsume(t, b, stream, nil)
   verifyPtrFetched(t, b, 0, 5)
+  for i := range aslice {
+    if origSlice[i] != aslice[i] {
+      t.Fatal("Expect aslice pointers not to change.")
+    }
+  }
 }
 
 func TestBufferSameSize(t *testing.T) {
@@ -70,7 +81,7 @@ func TestPtrGrowingBuffer(t *testing.T) {
 
 func TestPtrGrowingBuffer2(t *testing.T) {
   stream := functional.Slice(functional.Count(), 0, 6)
-  b := NewPtrGrowingBuffer(intPtrSlice, 1, intCreater)
+  b := NewPtrGrowingBuffer(intPtrSlice, 0, intCreater)
   doConsume(t, b, stream, nil)
   verifyPtrFetched(t, b, 0, 6)
   if actual := cap(b.Values().([]*int)); actual != 8 {
@@ -83,6 +94,9 @@ func TestGrowingBufferSameSize(t *testing.T) {
   b := NewGrowingBuffer(intSlice, 5)
   doConsume(t, b, stream, nil)
   verifyFetched(t, b, 0, 5)
+  if actual := cap(b.Values().([]int)); actual != 6 {
+    t.Errorf("Expected capacity of 6, got %v", actual)
+  }
 }
 
 func TestGrowingBufferSmall(t *testing.T) {
@@ -90,8 +104,8 @@ func TestGrowingBufferSmall(t *testing.T) {
   b := NewGrowingBuffer(intSlice, 5)
   doConsume(t, b, stream, nil)
   verifyFetched(t, b, 0, 6)
-  if actual := cap(b.Values().([]int)); actual != 10 {
-    t.Errorf("Expected capacit of 10, got %v", actual)
+  if actual := cap(b.Values().([]int)); actual != 12 {
+    t.Errorf("Expected capacity of 12, got %v", actual)
   }
 }
 
@@ -100,8 +114,8 @@ func TestGrowingBufferBig(t *testing.T) {
   b := NewGrowingBuffer(intSlice, 5)
   doConsume(t, b, stream, nil)
   verifyFetched(t, b, 0, 4)
-  if actual := cap(b.Values().([]int)); actual != 5 {
-    t.Errorf("Expected capacity of 5, got %v", actual)
+  if actual := cap(b.Values().([]int)); actual != 6 {
+    t.Errorf("Expected capacity of 6, got %v", actual)
   }
 }
 
@@ -114,6 +128,31 @@ func TestGrowingBufferError(t *testing.T) {
   }
 }
 
+func TestPtrGrowingBufferPointersPreserved(t *testing.T) {
+  stream := functional.Slice(functional.Count(), 0, 3)
+  b := NewPtrGrowingBuffer(intPtrSlice, 4, nil)
+  b.Consume(stream)
+  values := b.Values().([]*int)
+  zeroToThree := make([]*int, len(values))
+  copy(zeroToThree, values)
+
+  stream = functional.Slice(functional.Count(), 10, 15)
+  b.Consume(stream)
+  values = b.Values().([]*int)
+  tenToFifteen := make([]*int, len(values))
+  copy(tenToFifteen, values)
+
+  stream = functional.Slice(functional.Count(), 20, 22)
+  b.Consume(stream)
+  values = b.Values().([]*int)
+  twentyToTwentyTwo := make([]*int, len(values))
+  copy(twentyToTwentyTwo, values)
+
+  verifyPtrValues(t, zeroToThree, 0, 3)
+  verifyPtrValues(t, tenToFifteen, 10, 15)
+  verifyPtrValues(t, twentyToTwentyTwo, 20, 22)
+}
+
 func TestPtrPageBuffer(t *testing.T) {
   stream := functional.Count()
   pb := NewPtrPageBuffer(make([]*int, 6), 0)
@@ -123,9 +162,20 @@ func TestPtrPageBuffer(t *testing.T) {
 
 func TestPtrPageBufferWithCreater(t *testing.T) {
   stream := functional.Count()
-  pb := NewPtrPageBufferWithCreater(make([]*int, 6), 0, intCreater)
+  aslice := make([]*int, 6)
+  for i := range aslice {
+    aslice[i] = new(int)
+  }
+  origSlice := make([]*int, len(aslice))
+  copy(origSlice, aslice)
+  pb := NewPtrPageBuffer(aslice, 0)
   doConsume(t, pb, stream, nil)
   verifyPtrPageFetched(t, pb, 0, 3, 0, false)
+  for i := range aslice {
+    if origSlice[i] != aslice[i] {
+      t.Fatal("Expect aslice pointers not to change.")
+    }
+  }
 }
 
 func TestPageBufferFirstPage(t *testing.T) {
