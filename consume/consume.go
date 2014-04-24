@@ -54,13 +54,36 @@ func (b *Buffer) Consume(s functional.Stream) (err error) {
   return
 }
 
+// Append appends the values from a Stream of T to an existing []T.
+// alicePointer points to the []T which is updated in place.
+// Append is draft API and is subject to change.
+func Append(aSlicePointer interface{}) functional.Consumer {
+  aSliceValue := sliceValueFromP(aSlicePointer, false)
+  return &appendConsumer{buffer: aSliceValue, handler: valueHandler{}}
+}
+
+// AppendPtr appends the values from a Stream of T to an existing []*T.
+// alicePointer points to the []*T which is updated in place.
+// creater allocates space to store one T value. nil means new(T).
+// AppendPtr is draft API and is subject to change.
+func AppendPtr(
+    aSlicePointer interface{}, creater functional.Creater) functional.Consumer {
+  aSliceValue := sliceValueFromP(aSlicePointer, true)
+  aSliceType := aSliceValue.Type()
+  return &appendConsumer{
+      buffer: aSliceValue,
+      handler: overwritePtrHandler{
+          creater: newCreaterFunc(creater, aSliceType),
+      },
+  }
+}
+
 // GrowingBuffer reads values from a Stream of T until the stream is exausted.
 // GrowingBuffer grows as needed to hold all the read values.
 type GrowingBuffer struct {
-  buffer reflect.Value
-  sliceType reflect.Type
-  handler elementHandler
-  idx int
+  bufferPtr reflect.Value
+  creater functional.Creater
+  isPtrBuffer bool
 }
 
 // NewGrowingBuffer creates a new GrowingBuffer that stores the read values
@@ -70,7 +93,8 @@ type GrowingBuffer struct {
 func NewGrowingBuffer(aSlice interface{}, length int) *GrowingBuffer {
   return newGrowingBuffer(
       sliceType(aSlice, false),
-      valueHandler{},
+      nil,
+      false,
       length)
 }
 
@@ -83,47 +107,38 @@ func NewPtrGrowingBuffer(
     aSlice interface{},
     length int,
     creater functional.Creater) *GrowingBuffer {
-  aSliceType := sliceType(aSlice, true)
   return newGrowingBuffer(
-      aSliceType,
-      overwritePtrHandler{
-          creater: newCreaterFunc(creater, aSliceType)},
+      sliceType(aSlice, false),
+      creater,
+      true,
       length)
 }
 
 func newGrowingBuffer(
     aSliceType reflect.Type,
-    handler elementHandler,
+    creater functional.Creater,
+    isPtrBuffer bool,
     length int) *GrowingBuffer {
   if length < 0 {
     panic("length must be non negative")
   }
+  aSlicePtr := reflect.New(aSliceType)
+  aSlicePtr.Elem().Set(reflect.MakeSlice(aSliceType, 0, length + 1))
   result := &GrowingBuffer{
-      sliceType: aSliceType,
-      handler: handler}
-  // Make room for detecting end of data
-  result.buffer = result.ensureCapacity(reflect.Value{}, length + 1)
+      bufferPtr: aSlicePtr,
+      creater: creater,
+      isPtrBuffer: isPtrBuffer}
   return result
 }
     
-
 // Consume fetches the values. s is a Stream of T.
-func (g *GrowingBuffer) Consume(s functional.Stream) (err error) {
-  g.idx = 0
-  for err == nil {
-    bufLen := g.buffer.Len()
-    if g.idx == bufLen {
-      g.buffer = g.ensureCapacity(g.buffer, 2 * bufLen)
-      bufLen = g.buffer.Len()
-    }
-    var numRead int
-    numRead, err = readStreamIntoSlice(s, g.buffer.Slice(g.idx, bufLen), g.handler)
-    g.idx += numRead
+func (g *GrowingBuffer) Consume(s functional.Stream) error {
+  buffer := g.bufferPtr.Elem()
+  buffer.Set(buffer.Slice(0, 0))
+  if g.isPtrBuffer {
+    return AppendPtr(g.bufferPtr.Interface(), g.creater).Consume(s)
   }
-  if err == functional.Done {
-    err = nil
-  }
-  return
+  return Append(g.bufferPtr.Interface()).Consume(s)
 }
   
 // Values returns the values gathered from the last Consume call.
@@ -131,29 +146,7 @@ func (g *GrowingBuffer) Consume(s functional.Stream) (err error) {
 // NewGrowingBuffer or NewPtrGrowingBuffer was used to create this instance.
 // Returned slice remains valid until the next call to Consume.
 func (g *GrowingBuffer) Values() interface{} {
-  return g.buffer.Slice(0, g.idx).Interface()
-}
-
-func (g *GrowingBuffer) ensureCapacity(
-    aSlice reflect.Value, capacity int) reflect.Value {
-  var oldLen int
-  if aSlice.IsValid() {
-    oldLen = aSlice.Len()
-  } else {
-    oldLen = 0
-  }
-  if capacity > oldLen {
-    result := g.makeSlice(capacity)
-    for i := 0; i < oldLen; i++ {
-      result.Index(i).Set(aSlice.Index(i))
-    }
-    return result
-  }
-  return aSlice
-}
-
-func (g *GrowingBuffer) makeSlice(length int) reflect.Value {
-  return reflect.MakeSlice(g.sliceType, length, length)
+  return g.bufferPtr.Elem().Interface()
 }
 
 // PageBuffer reads a page of T values from a stream of T.
@@ -281,6 +274,30 @@ func FirstOnly(stream functional.Stream, emptyError error, ptr interface{}) (err
   return
 }
 
+type appendConsumer struct {
+  buffer reflect.Value
+  handler elementHandler
+}
+
+func (c *appendConsumer) Consume(s functional.Stream) (err error) {
+  bufCap := c.buffer.Cap()
+  bufLen := c.buffer.Len()
+  for err == nil {
+    if bufLen == bufCap {
+      bufCap = 2 * bufCap + 1
+      c.buffer.Set(ensureCapacity(c.buffer, bufCap))
+    }
+    var numRead int
+    numRead, err = readStreamIntoSlice(s, c.buffer.Slice(bufLen, bufCap), c.handler)
+    bufLen += numRead
+    c.buffer.Set(c.buffer.Slice(0, bufLen))
+  }
+  if err == functional.Done {
+    err = nil
+  }
+  return
+}
+
 func newCreaterFunc(
     creater functional.Creater, aSliceType reflect.Type) func() reflect.Value {
   if creater == nil {
@@ -353,7 +370,20 @@ func readStreamIntoSlice(
 }
 
 func sliceValue(aSlice interface{}, sliceOfPtrs bool) reflect.Value {
-  result := reflect.ValueOf(aSlice)
+  return checkSliceValue(reflect.ValueOf(aSlice), sliceOfPtrs)
+}
+
+func sliceValueFromP(
+    aSlicePointer interface{}, sliceOfPtrs bool) reflect.Value {
+  resultPtr := reflect.ValueOf(aSlicePointer)
+  if resultPtr.Type().Kind() != reflect.Ptr {
+    panic("A pointer to a slice is expected.")
+  }
+  return checkSliceValue(resultPtr.Elem(), sliceOfPtrs)
+}
+
+func checkSliceValue(
+    result reflect.Value, sliceOfPtrs bool) reflect.Value {
   if result.Kind() != reflect.Slice {
     panic("a slice is expected.")
   }
@@ -373,3 +403,11 @@ func sliceType(aSlice interface{}, sliceOfPtrs bool) reflect.Type {
   }
   return result
 }
+
+func ensureCapacity(
+    aSlice reflect.Value, capacity int) reflect.Value {
+  result := reflect.MakeSlice(aSlice.Type(), aSlice.Len(), capacity)
+  reflect.Copy(result, aSlice)
+  return result
+}
+

@@ -7,6 +7,7 @@ package consume
 
 import (
   "errors"
+  "fmt"
   "github.com/keep94/gofunctional3/functional"
   "testing"
 )
@@ -72,6 +73,64 @@ func TestBufferError(t *testing.T) {
   doConsume(t, b, stream, otherError)
 }
 
+func TestAppend(t *testing.T) {
+  var values []int
+  stream := functional.Slice(functional.Count(), 0, 7)
+  doConsume(t, Append(&values), stream, nil)
+  verifyValues(t, values, 0, 7)
+  if actual := cap(values); actual != 15 {
+    t.Errorf("Expected capacity of 15, got %v", actual)
+  }
+}
+
+func ExampleAppend() {
+  values := []int{5}
+  stream := functional.Slice(functional.Count(), 0, 2)
+  Append(&values).Consume(stream)
+  for i := range values {
+    fmt.Println(values[i])
+  }
+  // Output:
+  // 5
+  // 0
+  // 1
+}
+
+func TestAppend2(t *testing.T) {
+  values := []int{1, 2}
+  c := Append(&values)
+  stream := functional.Slice(functional.Count(), 3, 7)
+  doConsume(t, c, stream, nil)
+  stream = functional.Slice(functional.Count(), 7, 11)
+  doConsume(t, c, stream, nil)
+  verifyValues(t, values, 1, 11)
+  if actual := cap(values); actual != 11 {
+    t.Errorf("Expected capacity of 11, got %v", actual)
+  }
+}
+
+func TestAppendPtr(t *testing.T) {
+  var values []*int
+  stream := functional.Slice(functional.Count(), 0, 7)
+  doConsume(t, AppendPtr(&values, nil), stream, nil)
+  verifyPtrValues(t, values, 0, 7)
+}
+  
+func TestAppendPtr2(t *testing.T) {
+  var values []*int
+  stream := functional.Slice(functional.Count(), 0, 3)
+  var x int
+  // Our creater returns a pointer to the same variable.
+  creater := func() interface{} {
+    return &x
+  }
+  doConsume(t, AppendPtr(&values, creater), stream, nil)
+  // We should have a slice of length 3 with all pointers being the same.
+  if len(values) != 3 || values[0] != values[1] || values[0] != values[2] {
+    t.Error("Failure")
+  }
+}
+  
 func TestPtrGrowingBuffer(t *testing.T) {
   stream := functional.Slice(functional.Count(), 0, 6)
   b := NewPtrGrowingBuffer(intPtrSlice, 5, nil)
@@ -84,8 +143,8 @@ func TestPtrGrowingBuffer2(t *testing.T) {
   b := NewPtrGrowingBuffer(intPtrSlice, 0, intCreater)
   doConsume(t, b, stream, nil)
   verifyPtrFetched(t, b, 0, 6)
-  if actual := cap(b.Values().([]*int)); actual != 8 {
-    t.Errorf("Expected capacit of 8, got %v", actual)
+  if actual := cap(b.Values().([]*int)); actual != 7 {
+    t.Errorf("Expected capacity of 7, got %v", actual)
   }
 }
 
@@ -104,8 +163,8 @@ func TestGrowingBufferSmall(t *testing.T) {
   b := NewGrowingBuffer(intSlice, 5)
   doConsume(t, b, stream, nil)
   verifyFetched(t, b, 0, 6)
-  if actual := cap(b.Values().([]int)); actual != 12 {
-    t.Errorf("Expected capacity of 12, got %v", actual)
+  if actual := cap(b.Values().([]int)); actual != 13 {
+    t.Errorf("Expected capacity of 13, got %v", actual)
   }
 }
 
