@@ -54,19 +54,17 @@ func (b *Buffer) Consume(s functional.Stream) (err error) {
   return
 }
 
-// Append appends the values from a Stream of T to an existing []T.
-// alicePointer points to the []T which is updated in place.
-// Append is draft API and is subject to change.
-func Append(aSlicePointer interface{}) functional.Consumer {
+// AppendTo appends the values from a Stream of T to an existing []T.
+// aSlicePointer points to the []T which is updated in place.
+func AppendTo(aSlicePointer interface{}) functional.Consumer {
   aSliceValue := sliceValueFromP(aSlicePointer, false)
   return &appendConsumer{buffer: aSliceValue, handler: valueHandler{}}
 }
 
-// AppendPtr appends the values from a Stream of T to an existing []*T.
-// alicePointer points to the []*T which is updated in place.
+// AppendPtrsTo appends the values from a Stream of T to an existing []*T.
+// aSlicePointer points to the []*T which is updated in place.
 // creater allocates space to store one T value. nil means new(T).
-// AppendPtr is draft API and is subject to change.
-func AppendPtr(
+func AppendPtrsTo(
     aSlicePointer interface{}, creater functional.Creater) functional.Consumer {
   aSliceValue := sliceValueFromP(aSlicePointer, true)
   aSliceType := aSliceValue.Type()
@@ -78,6 +76,7 @@ func AppendPtr(
   }
 }
 
+// DEPRECATED: see AppendTo and AppendPtrsTo.
 // GrowingBuffer reads values from a Stream of T until the stream is exausted.
 // GrowingBuffer grows as needed to hold all the read values.
 type GrowingBuffer struct {
@@ -86,6 +85,7 @@ type GrowingBuffer struct {
   isPtrBuffer bool
 }
 
+// DEPRECATED: see AppendTo.
 // NewGrowingBuffer creates a new GrowingBuffer that stores the read values
 // as a []T. aSlice is a []T and should be nil. GrowingBuffer uses aSlice to
 // make slices internally via reflection. length is a hint for how many values
@@ -98,6 +98,7 @@ func NewGrowingBuffer(aSlice interface{}, length int) *GrowingBuffer {
       length)
 }
 
+// DEPRECATED: see AppendPtrsTo.
 // NewPtrGrowingBuffer creates a new GrowingBuffer that stores the read values
 // as a []*T. aSlice is a []*T and should be nil. GrowingBuffer uses aSlice to
 // make slices internally via reflection. length is a hint for how many values
@@ -131,16 +132,18 @@ func newGrowingBuffer(
   return result
 }
     
+// DEPRECATED: see AppendTo and AppendPtrsTo.
 // Consume fetches the values. s is a Stream of T.
 func (g *GrowingBuffer) Consume(s functional.Stream) error {
   buffer := g.bufferPtr.Elem()
   buffer.Set(buffer.Slice(0, 0))
   if g.isPtrBuffer {
-    return AppendPtr(g.bufferPtr.Interface(), g.creater).Consume(s)
+    return AppendPtrsTo(g.bufferPtr.Interface(), g.creater).Consume(s)
   }
-  return Append(g.bufferPtr.Interface()).Consume(s)
+  return AppendTo(g.bufferPtr.Interface()).Consume(s)
 }
   
+// DEPRECATED: see AppendTo and AppendPtrsTo.
 // Values returns the values gathered from the last Consume call.
 // Returned value is a []T or []*T depending on whether
 // NewGrowingBuffer or NewPtrGrowingBuffer was used to create this instance.

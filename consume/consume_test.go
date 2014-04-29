@@ -73,20 +73,20 @@ func TestBufferError(t *testing.T) {
   doConsume(t, b, stream, otherError)
 }
 
-func TestAppend(t *testing.T) {
+func TestAppendTo(t *testing.T) {
   var values []int
   stream := functional.Slice(functional.Count(), 0, 7)
-  doConsume(t, Append(&values), stream, nil)
+  doConsume(t, AppendTo(&values), stream, nil)
   verifyValues(t, values, 0, 7)
   if actual := cap(values); actual != 15 {
     t.Errorf("Expected capacity of 15, got %v", actual)
   }
 }
 
-func ExampleAppend() {
+func ExampleAppendTo() {
   values := []int{5}
   stream := functional.Slice(functional.Count(), 0, 2)
-  Append(&values).Consume(stream)
+  AppendTo(&values).Consume(stream)
   for i := range values {
     fmt.Println(values[i])
   }
@@ -96,9 +96,9 @@ func ExampleAppend() {
   // 1
 }
 
-func TestAppend2(t *testing.T) {
+func TestAppendTo2(t *testing.T) {
   values := []int{1, 2}
-  c := Append(&values)
+  c := AppendTo(&values)
   stream := functional.Slice(functional.Count(), 3, 7)
   doConsume(t, c, stream, nil)
   stream = functional.Slice(functional.Count(), 7, 11)
@@ -109,14 +109,27 @@ func TestAppend2(t *testing.T) {
   }
 }
 
-func TestAppendPtr(t *testing.T) {
+func TestAppendPtrsTo(t *testing.T) {
   var values []*int
   stream := functional.Slice(functional.Count(), 0, 7)
-  doConsume(t, AppendPtr(&values, nil), stream, nil)
+  doConsume(t, AppendPtrsTo(&values, nil), stream, nil)
   verifyPtrValues(t, values, 0, 7)
 }
   
-func TestAppendPtr2(t *testing.T) {
+func ExampleAppendPtrsTo() {
+  var values []*int
+  stream := functional.Slice(functional.Count(), 0, 3)
+  AppendPtrsTo(&values, nil).Consume(stream)
+  for i := range values {
+    fmt.Println(*values[i])
+  }
+  // Output:
+  // 0
+  // 1
+  // 2
+}
+
+func TestAppendPtrsTo2(t *testing.T) {
   var values []*int
   stream := functional.Slice(functional.Count(), 0, 3)
   var x int
@@ -124,7 +137,7 @@ func TestAppendPtr2(t *testing.T) {
   creater := func() interface{} {
     return &x
   }
-  doConsume(t, AppendPtr(&values, creater), stream, nil)
+  doConsume(t, AppendPtrsTo(&values, creater), stream, nil)
   // We should have a slice of length 3 with all pointers being the same.
   if len(values) != 3 || values[0] != values[1] || values[0] != values[2] {
     t.Error("Failure")
