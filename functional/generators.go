@@ -8,15 +8,15 @@ package functional
 // Emitter allows a function to emit values to an associated Stream.
 type Emitter interface {
 
-  // EmitPtr returns the pointer supplied to Next of associated Stream.
-  // If Close is called on associated Stream, EmitPtr returns nil and false.
-  EmitPtr() (ptr interface{}, streamOpened bool)
+	// EmitPtr returns the pointer supplied to Next of associated Stream.
+	// If Close is called on associated Stream, EmitPtr returns nil and false.
+	EmitPtr() (ptr interface{}, streamOpened bool)
 
-  // Return causes Next of associated Stream to return err. Return yields
-  // execution to the caller of Next blocking until it calls Next again or
-  // Close. Finally, Return returns the pointer passed to Next or nil and
-  // false if caller called Close.
-  Return(err error) (ptr interface{}, streamOpened bool)
+	// Return causes Next of associated Stream to return err. Return yields
+	// execution to the caller of Next blocking until it calls Next again or
+	// Close. Finally, Return returns the pointer passed to Next or nil and
+	// false if caller called Close.
+	Return(err error) (ptr interface{}, streamOpened bool)
 }
 
 // NewGenerator creates a Stream that emits the values from emitting
@@ -31,33 +31,33 @@ type Emitter interface {
 // never exit. Note that execution of f begins the first time the caller calls
 // Next() or Close() on associated Stream.
 func NewGenerator(f func(e Emitter) error) Stream {
-  result := regularGenerator{&emitterStream{ptrCh: make(chan interface{}), errCh: make(chan error)}}
-  go func() {
-    var err error
-    defer func() {
-      WaitForClose(result)
-      result.endEmitter(err)
-    }()
-    result.startEmitter()
-    err = f(result)
-  }()
-  return result
+	result := regularGenerator{&emitterStream{ptrCh: make(chan interface{}), errCh: make(chan error)}}
+	go func() {
+		var err error
+		defer func() {
+			WaitForClose(result)
+			result.endEmitter(err)
+		}()
+		result.startEmitter()
+		err = f(result)
+	}()
+	return result
 }
 
 // EmitAll emits all of Stream s to Emitter e.
 // If the Stream for e becomes closed, EmitAll returns false.
 // Otherwise EmitAll returns true.
 func EmitAll(s Stream, e Emitter) (opened bool) {
-  var ptr interface{}
-  if ptr, opened = e.EmitPtr(); !opened {
-    return
-  }
-  for err := s.Next(ptr); err != Done; err = s.Next(ptr) {
-    if ptr, opened = e.Return(err); !opened {
-      return
-    }
-  }
-  return
+	var ptr interface{}
+	if ptr, opened = e.EmitPtr(); !opened {
+		return
+	}
+	for err := s.Next(ptr); err != Done; err = s.Next(ptr) {
+		if ptr, opened = e.Return(err); !opened {
+			return
+		}
+	}
+	return
 }
 
 // Use WaitForClose in emitting functions (See description for NewGenerator).
@@ -66,34 +66,34 @@ func EmitAll(s Stream, e Emitter) (opened bool) {
 // An emitting function calls WaitForClose when it is done emitting values.
 // but before it does any final cleanup.
 func WaitForClose(e Emitter) {
-  for _, opened := e.EmitPtr(); opened; _, opened = e.Return(Done) {
-  }
+	for _, opened := e.EmitPtr(); opened; _, opened = e.Return(Done) {
+	}
 }
 
 type regularGenerator struct {
-  *emitterStream
+	*emitterStream
 }
 
 func (s regularGenerator) EmitPtr() (interface{}, bool) {
-  return s.ptr, s.ptr != nil
+	return s.ptr, s.ptr != nil
 }
 
 func (s regularGenerator) Return(err error) (interface{}, bool) {
-  if (s.ptr != nil) {
-    s.emitterStream.Return(err)
-  }
-  return s.EmitPtr()
+	if s.ptr != nil {
+		s.emitterStream.Return(err)
+	}
+	return s.EmitPtr()
 }
 
 func (s regularGenerator) Next(ptr interface{}) error {
-  if ptr == nil {
-    panic("Got nil pointer in Next.")
-  }
-  return s.emitterStream.next(ptr)
+	if ptr == nil {
+		panic("Got nil pointer in Next.")
+	}
+	return s.emitterStream.next(ptr)
 }
 
 func (s regularGenerator) Close() error {
-  result := s.emitterStream.next(nil)
-  s.close()
-  return result
+	result := s.emitterStream.next(nil)
+	s.close()
+	return result
 }

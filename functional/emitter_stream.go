@@ -6,44 +6,44 @@
 package functional
 
 type emitterStream struct {
-  errCh chan error
-  ptrCh chan interface{}
-  ptr interface{}
+	errCh chan error
+	ptrCh chan interface{}
+	ptr   interface{}
 }
 
 func (s *emitterStream) next(ptr interface{}) error {
-  s.ptrCh <- ptr
-  return <-s.errCh
+	s.ptrCh <- ptr
+	return <-s.errCh
 }
 
 func (s *emitterStream) Return(err error) {
-  s.errCh <- err
-  s.ptr = <-s.ptrCh
+	s.errCh <- err
+	s.ptr = <-s.ptrCh
 }
 
 func (s *emitterStream) startEmitter() {
-  s.ptr = <-s.ptrCh
+	s.ptr = <-s.ptrCh
 }
 
 func (s *emitterStream) endEmitter(e error) {
-  s.errCh <- e
+	s.errCh <- e
 }
 
 func (s *emitterStream) startStream() {
-  <-s.errCh
+	<-s.errCh
 }
 
 func (s *emitterStream) endStream() {
-  s.ptrCh <- nil
+	s.ptrCh <- nil
 }
 
 func (s *emitterStream) close() {
-  close(s.errCh)
-  s.errCh = nil
-  close(s.ptrCh)
-  s.ptrCh = nil
+	close(s.errCh)
+	s.errCh = nil
+	close(s.ptrCh)
+	s.ptrCh = nil
 }
 
 func (s *emitterStream) isClosed() bool {
-  return s.ptrCh == nil
+	return s.ptrCh == nil
 }
