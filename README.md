@@ -13,15 +13,6 @@ added may be marked as provisional, draft API.
 	import "github.com/keep94/gofunctional3/functional"
 	import "github.com/keep94/gofunctional3/consume"
 
-## Installing
-
-	go get github.com/keep94/gofunctional3/functional
-	go get github.com/keep94/gofunctional3/consume
-
-## Online Documentation
-
-Online documentation is available [here](http://godoc.org/github.com/keep94/gofunctional3).
-
 ## Release notes and what changed from gofunctional2
 
 Click [here](https://sites.google.com/site/gofunctional3) to see the release
