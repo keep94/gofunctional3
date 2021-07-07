@@ -27,7 +27,6 @@ func TestNewInfiniteGenerator(t *testing.T) {
 			}
 			a, b = b, a+b
 		}
-		return nil
 	}
 	var results []int
 	stream := Slice(NewGenerator(fibFunc), 0, 7)
